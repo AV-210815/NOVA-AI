@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>NOVA</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Bodoni+Moda:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <div class="brand" id="brand" tabindex="0">
+        <div class="logo">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="#facc15"><path d="M12 1.5c.6 4.4 2.1 6.9 4.5 8.9 2.4 1.9 5 2.7 6 3.1-1 .4-3.6 1.2-6 3.1-2.4 2-3.9 4.5-4.5 8.9-.6-4.4-2.1-6.9-4.5-8.9-2.4-1.9-5-2.7-6-3.1 1-.4 3.6-1.2 6-3.1 2.4-2 3.9-4.5 4.5-8.9z"/></svg>
+        </div>
+        <span>NOVA</span>
+        <div class="brand-tooltip" id="brand-tooltip">Natural Omniscient Virtual Assistant</div>
+      </div>
+
+      <button id="new-chat-btn">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        New chat
+      </button>
+
+      <div class="sidebar-section-label">Recent</div>
+      <div id="chat-list" class="nova-scroll"></div>
+    </aside>
+
+    <main>
+      <div id="topbar">
+        <div class="topbar-left">
+          <div class="workspace-label">General workspace</div>
+          <div class="divider"></div>
+          <div class="workspace-sub">RAG over your notes · web search when needed</div>
+        </div>
+        <div class="topbar-tip">Tip: Try typing /nova and then /supernova in the chat!</div>
+      </div>
+
+      <div id="messages">
+        <div id="planet-scene"></div>
+        <canvas id="starfield-canvas"></canvas>
+        <svg id="moon-icon" width="42" height="42" viewBox="0 0 42 42">
+          <defs>
+            <radialGradient id="moon-gradient" cx="38%" cy="35%" r="70%">
+              <stop offset="0%" stop-color="#ffffff"/>
+              <stop offset="100%" stop-color="#d8dae6"/>
+            </radialGradient>
+            <mask id="moon-mask">
+              <rect width="42" height="42" fill="#fff"/>
+              <circle cx="25" cy="14" r="13.5" fill="#000"/>
+            </mask>
+          </defs>
+          <circle cx="21" cy="21" r="13.5" fill="url(#moon-gradient)" mask="url(#moon-mask)"/>
+        </svg>
+        <div id="messages-scroll" class="nova-scroll">
+          <div id="empty-state">
+            <div class="empty-logo">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="#facc15"><path d="M12 1.5c.6 4.4 2.1 6.9 4.5 8.9 2.4 1.9 5 2.7 6 3.1-1 .4-3.6 1.2-6 3.1-2.4 2-3.9 4.5-4.5 8.9-.6-4.4-2.1-6.9-4.5-8.9-2.4-1.9-5-2.7-6-3.1 1-.4 3.6-1.2 6-3.1 2.4-2 3.9-4.5 4.5-8.9z"/></svg>
+            </div>
+            <div class="empty-greeting" id="greeting">Good afternoon</div>
+            <div class="empty-sub" id="empty-sub">Ask about your notes, or anything else.</div>
+            <div class="suggestions" id="suggestions"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="composer-wrap">
+        <div id="composer">
+          <div id="input-box">
+            <textarea id="message-input" rows="1" placeholder="Message NOVA..." autofocus></textarea>
+            <button type="button" id="send-btn" aria-label="Send" disabled>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+            </button>
+          </div>
+          <div id="disclaimer">NOVA can make mistakes. Verify important information.</div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
