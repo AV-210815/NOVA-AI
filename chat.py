@@ -121,8 +121,7 @@ def retrieve_context(query: str, k: int = config.RETRIEVAL_K) -> list[dict]:
     if collection.count() == 0:
         return []
 
-    model = ingest.get_model()
-    query_embedding = model.encode([query]).tolist()
+    query_embedding = ingest.embed_texts([query], task_type="RETRIEVAL_QUERY")
     result = collection.query(query_embeddings=query_embedding, n_results=min(k, collection.count()))
 
     chunks = []

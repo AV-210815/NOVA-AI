@@ -36,12 +36,11 @@ def chat(req: ChatRequest):
 @app.get("/api/search")
 def search(q: str, k: int = 8):
     collection = ingest.get_collection()
-    model = ingest.get_model()
 
     if collection.count() == 0:
         return {"results": []}
 
-    query_embedding = model.encode([q]).tolist()
+    query_embedding = ingest.embed_texts([q], task_type="RETRIEVAL_QUERY")
     result = collection.query(query_embeddings=query_embedding, n_results=min(k, collection.count()))
 
     raw_scores = [max(0.0, 1 - distance / 2) for distance in result["distances"][0]]

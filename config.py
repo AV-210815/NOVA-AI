@@ -27,7 +27,10 @@ CHROMA_DIR = BASE_DIR / ".chroma"
 MANIFEST_PATH = BASE_DIR / ".chroma" / "manifest.json"
 
 COLLECTION_NAME = "notes"
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+# Switched from local sentence-transformers (all-MiniLM-L6-v2) to Gemini's hosted
+# embedding API — removes the PyTorch dependency, which was too heavy for Render's
+# free-tier RAM limit.
+EMBEDDING_MODEL = "gemini-embedding-2"
 
 CHUNK_SIZE = 500
 CHUNK_OVERLAP = 50
@@ -38,11 +41,11 @@ CHAT_MODEL = "gemini-2.5-flash"
 
 RETRIEVAL_K = 5
 
-# Raw cosine similarity floor below which a chunk isn't worth citing. Sentence
-# embeddings are anisotropic: even unrelated chunks score ~0.5-0.65, while chunks
-# genuinely relevant to the query have scored 0.7+ in testing. 0.35 let irrelevant
-# notes leak into every prompt; 0.65 tracks the observed gap much more closely.
-RETRIEVAL_MIN_SCORE = 0.65
+# Raw cosine similarity floor below which a chunk isn't worth citing. Re-calibrated
+# for gemini-embedding-2: unrelated queries scored ~0.75-0.77 in testing, genuinely
+# relevant ones ~0.78-0.83 — a narrower gap than all-MiniLM had, so the floor sits
+# right above the irrelevant band rather than in the middle of a wide one.
+RETRIEVAL_MIN_SCORE = 0.78
 
 # Gemini API key (Google AI Studio).
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")

@@ -1,4 +1,4 @@
-"""Chunk notes, embed them, and upsert into the local Chroma vector store.
+"""Chunk notes, embed them via the Gemini API, and upsert into the local Chroma vector store.
 
 Run directly to reindex from the CLI:
     python ingest.py
@@ -7,23 +7,33 @@ import json
 import re
 
 import chromadb
-from sentence_transformers import SentenceTransformer
+from google import genai
+from google.genai import types
 
 import config
 
-_model = None
+client = genai.Client(api_key=config.GEMINI_API_KEY)
 
 
-def get_model() -> SentenceTransformer:
-    global _model
-    if _model is None:
-        _model = SentenceTransformer(config.EMBEDDING_MODEL)
-    return _model
+def embed_texts(texts: list[str], task_type: str) -> list[list[float]]:
+    """task_type is "RETRIEVAL_DOCUMENT" when embedding notes for storage, or
+    "RETRIEVAL_QUERY" when embedding a search query — Gemini's embeddings are
+    asymmetric and tuned for retrieval when the task types are set this way.
+    """
+    if not texts:
+        return []
+    contents = [types.Content(parts=[types.Part(text=t)]) for t in texts]
+    resp = client.models.embed_content(
+        model=config.EMBEDDING_MODEL,
+        contents=contents,
+        config=types.EmbedContentConfig(task_type=task_type),
+    )
+    return [e.values for e in resp.embeddings]
 
 
 def get_collection():
-    client = chromadb.PersistentClient(path=str(config.CHROMA_DIR))
-    return client.get_or_create_collection(
+    chroma_client = chromadb.PersistentClient(path=str(config.CHROMA_DIR))
+    return chroma_client.get_or_create_collection(
         config.COLLECTION_NAME,
         metadata={"hnsw:space": "cosine"},
     )
@@ -78,7 +88,6 @@ def discover_files() -> list:
 
 def reindex() -> dict:
     collection = get_collection()
-    model = get_model()
     manifest = load_manifest()
 
     files = discover_files()
@@ -101,7 +110,7 @@ def reindex() -> dict:
         text = path.read_text(encoding="utf-8", errors="ignore")
         chunks = chunk_text(text)
         if chunks:
-            embeddings = model.encode(chunks, show_progress_bar=False).tolist()
+            embeddings = embed_texts(chunks, task_type="RETRIEVAL_DOCUMENT")
             ids = [f"{rel_path}::{i}" for i in range(len(chunks))]
             metadatas = [{"source": rel_path, "chunk_index": i} for i in range(len(chunks))]
             collection.add(ids=ids, embeddings=embeddings, documents=chunks, metadatas=metadatas)
