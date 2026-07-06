@@ -1362,6 +1362,7 @@ async function toggleRecording() {
 micBtn.addEventListener("click", toggleRecording);
 
 newChatBtn.addEventListener("click", () => {
+  switchView("nebula");
   history = [];
   setActiveChatId(null);
   showEmptyState();
