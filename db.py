@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS health_entries (
     user_id INTEGER NOT NULL REFERENCES users(id),
     timestamp TEXT NOT NULL,
     description TEXT NOT NULL,
+    items_json TEXT NOT NULL DEFAULT '[]',
     calories REAL NOT NULL,
     nutrients_present_json TEXT NOT NULL,
     deficiencies_json TEXT NOT NULL
@@ -63,6 +64,9 @@ def get_db():
 def init_db() -> None:
     with get_db() as conn:
         conn.executescript(SCHEMA)
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(health_entries)")}
+        if "items_json" not in columns:
+            conn.execute("ALTER TABLE health_entries ADD COLUMN items_json TEXT NOT NULL DEFAULT '[]'")
 
 
 # --- Users & sessions ---
@@ -169,6 +173,7 @@ def load_health_entries(user_id: int) -> list[dict]:
             {
                 "timestamp": r["timestamp"],
                 "description": r["description"],
+                "items": json.loads(r["items_json"]),
                 "calories": r["calories"],
                 "nutrients_present": json.loads(r["nutrients_present_json"]),
                 "deficiencies": json.loads(r["deficiencies_json"]),
@@ -182,14 +187,15 @@ def append_health_entry(user_id: int, entry: dict) -> None:
         conn.execute(
             """
             INSERT INTO health_entries
-                (id, user_id, timestamp, description, calories, nutrients_present_json, deficiencies_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (id, user_id, timestamp, description, items_json, calories, nutrients_present_json, deficiencies_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 uuid.uuid4().hex,
                 user_id,
                 entry["timestamp"],
                 entry["description"],
+                json.dumps(entry["items"]),
                 entry["calories"],
                 json.dumps(entry["nutrients_present"]),
                 json.dumps(entry["deficiencies"]),

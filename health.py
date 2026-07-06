@@ -33,14 +33,26 @@ LOG_MEAL_TOOL = types.Tool(function_declarations=[
                     "type": "STRING",
                     "description": "Short description of the food, e.g. 'Bhindi sabzi with 2 rotis'",
                 },
+                "items": {
+                    "type": "ARRAY",
+                    "items": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "name": {"type": "STRING", "description": "Name of this individual food item, e.g. 'Bhindi sabzi'"},
+                            "calories": {"type": "NUMBER", "description": "Estimated calories for this item alone"},
+                        },
+                        "required": ["name", "calories"],
+                    },
+                    "description": "Every distinct food item visible/described, each with its own calorie estimate — e.g. one entry for rice, one for dal, one for a roti, not just a combined total.",
+                },
                 "calories": {
                     "type": "NUMBER",
-                    "description": "Estimated total calories for the portion shown",
+                    "description": "Total calories for the whole meal (sum of all items)",
                 },
                 "nutrients_present": {
                     "type": "ARRAY",
                     "items": {"type": "STRING"},
-                    "description": "Notable nutrients this meal is a good source of, e.g. ['fiber', 'vitamin C', 'iron']",
+                    "description": "Notable nutrients this meal is a good, balanced source of, e.g. ['fiber', 'vitamin C', 'iron']",
                 },
                 "deficiencies": {
                     "type": "ARRAY",
@@ -48,7 +60,7 @@ LOG_MEAL_TOOL = types.Tool(function_declarations=[
                     "description": "Notable nutrients this meal is low in or missing, e.g. ['protein', 'calcium']",
                 },
             },
-            "required": ["description", "calories", "nutrients_present", "deficiencies"],
+            "required": ["description", "items", "calories", "nutrients_present", "deficiencies"],
         },
     )
 ])
@@ -82,10 +94,12 @@ SYSTEM_PROMPT = (
     "clarifying question in plain text and wait for the user's reply. Do not guess "
     "and log a wrong analysis, and do not ask about the same thing twice.\n\n"
     "Once you're confident — whether from a photo, from the user's text, or a "
-    "combination — call the log_meal tool with your final analysis: a short "
-    "description, an estimated calorie count for the portion described or shown, a "
-    "list of notable nutrients the meal is a good source of, and a list of notable "
-    "nutrients it's deficient in or low in.\n\n"
+    "combination — call the log_meal tool with your final analysis: a short overall "
+    "description, a per-item breakdown listing every distinct food item with its own "
+    "calorie estimate (rice, dal, roti, sabzi, etc. each separately — never lump "
+    "everything into one combined number), a total calorie count for the whole meal, "
+    "a list of notable nutrients the meal is a good, balanced source of, and a list "
+    "of notable nutrients it's deficient in or low in.\n\n"
     "Never use profanity. Be direct and practical, not preachy about health choices."
 )
 
@@ -146,18 +160,28 @@ def analyze_food(
     entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "description": args.get("description", ""),
+        "items": [
+            {"name": item.get("name", ""), "calories": item.get("calories", 0)}
+            for item in args.get("items", [])
+        ],
         "calories": args.get("calories", 0),
         "nutrients_present": list(args.get("nutrients_present", [])),
         "deficiencies": list(args.get("deficiencies", [])),
     }
     db.append_health_entry(user_id, entry)
 
+    yield {"token": meal_summary_text(entry)}
+    yield {"done": True, "logged": True, "entry": entry}
+
+
+def meal_summary_text(entry: dict) -> str:
+    items_str = "\n".join(f"- {item['name']}: ~{item['calories']:.0f} kcal" for item in entry["items"]) or "none noted"
     nutrients_str = ", ".join(entry["nutrients_present"]) or "none noted"
     deficiencies_str = ", ".join(entry["deficiencies"]) or "none noted"
-    summary = (
-        f"Logged: **{entry['description']}** — ~{entry['calories']:.0f} kcal\n\n"
-        f"**Good source of:** {nutrients_str}\n"
-        f"**Low in:** {deficiencies_str}"
+    return (
+        f"Logged: **{entry['description']}**\n\n"
+        f"{items_str}\n\n"
+        f"**Total: ~{entry['calories']:.0f} kcal**\n\n"
+        f"**Balanced in:** {nutrients_str}\n"
+        f"**Deficient in:** {deficiencies_str}"
     )
-    yield {"token": summary}
-    yield {"done": True, "logged": True, "entry": entry}

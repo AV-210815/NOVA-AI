@@ -533,11 +533,14 @@ function beginHealthStreamingMessage() {
 }
 
 function mealSummaryText(entry) {
+  const items = (entry.items || []).map(i => `- ${i.name}: ~${Math.round(i.calories)} kcal`).join("\n") || "none noted";
   const nutrients = entry.nutrients_present.join(", ") || "none noted";
   const deficiencies = entry.deficiencies.join(", ") || "none noted";
-  return `Logged: **${entry.description}** — ~${Math.round(entry.calories)} kcal\n\n` +
-    `**Good source of:** ${nutrients}\n` +
-    `**Low in:** ${deficiencies}`;
+  return `Logged: **${entry.description}**\n\n` +
+    `${items}\n\n` +
+    `**Total: ~${Math.round(entry.calories)} kcal**\n\n` +
+    `**Balanced in:** ${nutrients}\n` +
+    `**Deficient in:** ${deficiencies}`;
 }
 
 let shownMealTimestamp = null;
