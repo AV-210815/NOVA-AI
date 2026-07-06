@@ -1,4 +1,6 @@
 fastapi
 uvicorn[standard]
+python-multipart
 chromadb
 google-genai
+openai-whisper

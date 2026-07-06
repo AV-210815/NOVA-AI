@@ -1,6 +1,6 @@
 import json
 
-from fastapi import FastAPI
+from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -8,6 +8,7 @@ from pydantic import BaseModel
 import chat as chat_module
 import config
 import ingest
+import voice
 
 app = FastAPI(title="NOVA semantic search")
 
@@ -60,6 +61,13 @@ def search(q: str, k: int = 8):
             "score": round(relative_score, 4),
         })
     return {"results": results}
+
+
+@app.post("/api/transcribe")
+async def transcribe(audio: UploadFile = File(...)):
+    audio_bytes = await audio.read()
+    text = voice.transcribe_audio(audio_bytes)
+    return {"text": text}
 
 
 @app.post("/api/reindex")

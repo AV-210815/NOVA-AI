@@ -49,3 +49,8 @@ RETRIEVAL_MIN_SCORE = 0.78
 
 # Gemini API key (Google AI Studio).
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+
+# Local Whisper model size for voice input transcription. "base" balances accuracy
+# against memory/CPU — this pulls in PyTorch (like the old local embeddings did),
+# so it's a real memory risk on Render's free tier; fine for local use.
+WHISPER_MODEL = "base"

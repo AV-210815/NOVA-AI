@@ -6,6 +6,7 @@ const suggestionsEl = document.getElementById("suggestions");
 const chatListEl = document.getElementById("chat-list");
 const input = document.getElementById("message-input");
 const sendBtn = document.getElementById("send-btn");
+const micBtn = document.getElementById("mic-btn");
 const newChatBtn = document.getElementById("new-chat-btn");
 const brandEl = document.getElementById("brand");
 const brandTooltip = document.getElementById("brand-tooltip");
@@ -1058,6 +1059,59 @@ input.addEventListener("keydown", (e) => {
 });
 
 sendBtn.addEventListener("click", sendMessage);
+
+let mediaRecorder = null;
+let recordedChunks = [];
+
+async function toggleRecording() {
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    mediaRecorder.stop();
+    return;
+  }
+
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    addMessage("assistant", "Couldn't access your microphone — check your browser's permission settings.");
+    return;
+  }
+
+  recordedChunks = [];
+  mediaRecorder = new MediaRecorder(stream);
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data.size > 0) recordedChunks.push(e.data);
+  };
+  mediaRecorder.onstop = async () => {
+    stream.getTracks().forEach((track) => track.stop());
+    micBtn.classList.remove("recording");
+
+    const blob = new Blob(recordedChunks, { type: "audio/webm" });
+    const formData = new FormData();
+    formData.append("audio", blob, "recording.webm");
+
+    micBtn.disabled = true;
+    try {
+      const res = await fetch("/api/transcribe", { method: "POST", body: formData });
+      const data = await res.json();
+      if (data.text) {
+        input.value = input.value ? `${input.value} ${data.text}` : data.text;
+        input.dispatchEvent(new Event("input"));
+        autoGrow();
+        input.focus();
+      }
+    } catch (err) {
+      addMessage("assistant", "Transcription failed — something went wrong reaching the server.");
+    } finally {
+      micBtn.disabled = false;
+    }
+  };
+
+  mediaRecorder.start();
+  micBtn.classList.add("recording");
+}
+
+micBtn.addEventListener("click", toggleRecording);
 
 newChatBtn.addEventListener("click", () => {
   history = [];
