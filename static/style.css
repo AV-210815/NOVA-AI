@@ -546,6 +546,14 @@ main {
   transition: background 0.15s;
 }
 
+#mic-btn {
+  /* Match the NOVA icon look (.row-avatar / .brand .logo) instead of the flat
+     grey send-button idle state, and add breathing room from the send button. */
+  margin-right: 10px;
+  background: #161616;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 4px 14px rgba(250, 204, 21, 0.2);
+}
+
 #send-btn.ready {
   background: linear-gradient(135deg, #a78bfa, #7c5cf0);
 }
@@ -556,6 +564,7 @@ main {
 
 #mic-btn.recording {
   background: #e5484d;
+  box-shadow: none;
   animation: mic-pulse 1.4s ease-in-out infinite;
 }
 
