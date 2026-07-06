@@ -657,8 +657,25 @@ main {
 }
 
 .health-log-item {
+  display: block;
+  width: 100%;
+  text-align: left;
   padding: 9px 10px;
   border-radius: 9px;
+  border: none;
+  border-left: 2px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.health-log-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.health-log-item.active {
+  background: rgba(167, 139, 250, 0.10);
+  border-left: 2px solid #a78bfa;
 }
 
 .health-log-item-desc {

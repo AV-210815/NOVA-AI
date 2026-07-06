@@ -528,6 +528,28 @@ function beginHealthStreamingMessage() {
   return bubble;
 }
 
+function mealSummaryText(entry) {
+  const nutrients = entry.nutrients_present.join(", ") || "none noted";
+  const deficiencies = entry.deficiencies.join(", ") || "none noted";
+  return `Logged: **${entry.description}** — ~${Math.round(entry.calories)} kcal\n\n` +
+    `**Good source of:** ${nutrients}\n` +
+    `**Low in:** ${deficiencies}`;
+}
+
+function showLoggedMeal(entry, itemEl) {
+  healthHistory = [];
+  clearHealthPreview();
+  if (healthMessageList) {
+    healthMessageList.remove();
+    healthMessageList = null;
+  }
+  for (const el of healthLogList.querySelectorAll(".health-log-item.active")) {
+    el.classList.remove("active");
+  }
+  itemEl.classList.add("active");
+  addHealthMessage("assistant", mealSummaryText(entry));
+}
+
 async function loadHealthLog() {
   try {
     const res = await fetch("/api/health/log");
@@ -536,13 +558,15 @@ async function loadHealthLog() {
 
     healthLogList.innerHTML = "";
     for (const entry of [...data.entries].reverse()) {
-      const item = document.createElement("div");
+      const item = document.createElement("button");
+      item.type = "button";
       item.className = "health-log-item";
       const time = new Date(entry.timestamp).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
       item.innerHTML = `
         <div class="health-log-item-desc">${escapeHtml(entry.description)}</div>
         <div class="health-log-item-meta">${Math.round(entry.calories)} kcal · ${escapeHtml(time)}</div>
       `;
+      item.addEventListener("click", () => showLoggedMeal(entry, item));
       healthLogList.appendChild(item);
     }
   } catch (err) {
@@ -1362,7 +1386,15 @@ async function toggleRecording() {
 micBtn.addEventListener("click", toggleRecording);
 
 newChatBtn.addEventListener("click", () => {
-  switchView("nebula");
+  if (currentView === "health") {
+    healthHistory = [];
+    clearHealthPreview();
+    showHealthEmptyState();
+    for (const item of healthLogList.querySelectorAll(".health-log-item.active")) {
+      item.classList.remove("active");
+    }
+    return;
+  }
   history = [];
   setActiveChatId(null);
   showEmptyState();
