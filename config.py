@@ -54,3 +54,7 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 # against memory/CPU — this pulls in PyTorch (like the old local embeddings did),
 # so it's a real memory risk on Render's free tier; fine for local use.
 WHISPER_MODEL = "base"
+
+# NOVA Health: photo-based food/calorie tracking. Gemini's own vision input
+# handles the image analysis, so no separate vision model/dependency is needed.
+HEALTH_LOG_PATH = BASE_DIR / "health_log.json"

@@ -9,10 +9,27 @@ const sendBtn = document.getElementById("send-btn");
 const micBtn = document.getElementById("mic-btn");
 const newChatBtn = document.getElementById("new-chat-btn");
 const brandEl = document.getElementById("brand");
-const brandTooltip = document.getElementById("brand-tooltip");
+const brandLabel = document.getElementById("brand-label");
+const brandDropdown = document.getElementById("brand-dropdown");
 const starfieldCanvas = document.getElementById("starfield-canvas");
 const starCtx = starfieldCanvas.getContext("2d");
 const moonIcon = document.getElementById("moon-icon");
+
+const nebulaView = document.getElementById("nebula-view");
+const healthView = document.getElementById("health-view");
+const healthSidebar = document.getElementById("health-sidebar");
+const healthTodayTotal = document.getElementById("health-today-total");
+const healthLogList = document.getElementById("health-log-list");
+const healthMessagesScrollEl = document.getElementById("health-messages-scroll");
+const healthEmptyState = document.getElementById("health-empty-state");
+const healthPhotoInput = document.getElementById("health-photo-input");
+const healthPhotoBtn = document.getElementById("health-photo-btn");
+const healthInput = document.getElementById("health-message-input");
+const healthSendBtn = document.getElementById("health-send-btn");
+const healthPreview = document.getElementById("health-preview");
+const workspaceLabel = document.getElementById("workspace-label");
+const workspaceSub = document.getElementById("workspace-sub");
+const topbarTip = document.getElementById("topbar-tip");
 
 const SUGGESTIONS = [
   "Summarize this week's notes",
@@ -199,6 +216,14 @@ let history = [];
 let messageList = null;
 let chats = loadChats();
 let activeChatId = localStorage.getItem(ACTIVE_CHAT_KEY);
+
+let currentView = "nebula";
+let healthHistory = [];
+let healthMessageList = null;
+// Kept across a whole meal-logging exchange (not cleared after the first send) so
+// every follow-up request still carries the photo — otherwise the model loses the
+// image once a clarifying question moves the conversation to text-only replies.
+let healthImageFile = null;
 
 function loadChats() {
   try {
@@ -426,6 +451,229 @@ function appendSourcesToBubble(bubble, sources, webSources) {
       .map(s => `<a href="${escapeHtml(s.url)}" target="_blank" rel="noopener">${escapeHtml(s.title || s.url)}</a>`)
       .join(", ");
     bubble.appendChild(web);
+  }
+}
+
+function showHealthEmptyState() {
+  if (healthMessageList) {
+    healthMessageList.remove();
+    healthMessageList = null;
+  }
+  if (!document.getElementById("health-empty-state")) {
+    healthMessagesScrollEl.appendChild(healthEmptyState);
+  }
+}
+
+function ensureHealthMessageList() {
+  if (!healthMessageList) {
+    const existingEmpty = document.getElementById("health-empty-state");
+    if (existingEmpty) existingEmpty.remove();
+    healthMessageList = document.createElement("div");
+    healthMessageList.className = "message-list";
+    healthMessagesScrollEl.appendChild(healthMessageList);
+  }
+  return healthMessageList;
+}
+
+function addHealthMessage(role, text, imageDataUrl) {
+  const list = ensureHealthMessageList();
+
+  const row = document.createElement("div");
+  row.className = `row ${role}`;
+
+  if (role !== "user") {
+    const avatar = document.createElement("div");
+    avatar.className = "row-avatar";
+    avatar.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="#facc15"><path d="M12 1.5c.6 4.4 2.1 6.9 4.5 8.9 2.4 1.9 5 2.7 6 3.1-1 .4-3.6 1.2-6 3.1-2.4 2-3.9 4.5-4.5 8.9-.6-4.4-2.1-6.9-4.5-8.9-2.4-1.9-5-2.7-6-3.1 1-.4 3.6-1.2 6-3.1 2.4-2 3.9-4.5 4.5-8.9z"/></svg>';
+    row.appendChild(avatar);
+  }
+
+  const bubble = document.createElement("div");
+  bubble.className = "bubble";
+  if (imageDataUrl) {
+    const img = document.createElement("img");
+    img.className = "health-photo-thumb";
+    img.src = imageDataUrl;
+    bubble.appendChild(img);
+  }
+  if (text) {
+    const textEl = document.createElement("span");
+    textEl.innerHTML = renderMarkdown(text);
+    bubble.appendChild(textEl);
+  }
+
+  row.appendChild(bubble);
+  list.appendChild(row);
+  healthMessagesScrollEl.scrollTop = healthMessagesScrollEl.scrollHeight;
+  return row;
+}
+
+function beginHealthStreamingMessage() {
+  const list = ensureHealthMessageList();
+
+  const row = document.createElement("div");
+  row.className = "row assistant";
+
+  const avatar = document.createElement("div");
+  avatar.className = "row-avatar";
+  avatar.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="#facc15"><path d="M12 1.5c.6 4.4 2.1 6.9 4.5 8.9 2.4 1.9 5 2.7 6 3.1-1 .4-3.6 1.2-6 3.1-2.4 2-3.9 4.5-4.5 8.9-.6-4.4-2.1-6.9-4.5-8.9-2.4-1.9-5-2.7-6-3.1 1-.4 3.6-1.2 6-3.1 2.4-2 3.9-4.5 4.5-8.9z"/></svg>';
+  row.appendChild(avatar);
+
+  const bubble = document.createElement("div");
+  bubble.className = "bubble";
+  row.appendChild(bubble);
+
+  list.appendChild(row);
+  healthMessagesScrollEl.scrollTop = healthMessagesScrollEl.scrollHeight;
+  return bubble;
+}
+
+async function loadHealthLog() {
+  try {
+    const res = await fetch("/api/health/log");
+    const data = await res.json();
+    healthTodayTotal.textContent = `Today: ${Math.round(data.today_total_calories)} kcal`;
+
+    healthLogList.innerHTML = "";
+    for (const entry of [...data.entries].reverse()) {
+      const item = document.createElement("div");
+      item.className = "health-log-item";
+      const time = new Date(entry.timestamp).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+      item.innerHTML = `
+        <div class="health-log-item-desc">${escapeHtml(entry.description)}</div>
+        <div class="health-log-item-meta">${Math.round(entry.calories)} kcal · ${escapeHtml(time)}</div>
+      `;
+      healthLogList.appendChild(item);
+    }
+  } catch (err) {
+    // Log sidebar is a nice-to-have; a failed fetch shouldn't block the rest of the view.
+  }
+}
+
+function clearHealthPreview() {
+  healthImageFile = null;
+  healthPreview.hidden = true;
+  healthPreview.innerHTML = "";
+  healthPhotoBtn.classList.remove("has-photo");
+  healthPhotoInput.value = "";
+}
+
+function updateHealthSendState() {
+  const hasText = healthInput.value.trim().length > 0;
+  healthSendBtn.disabled = !hasText && !healthImageFile;
+  healthSendBtn.classList.toggle("ready", hasText || !!healthImageFile);
+}
+
+healthPhotoBtn.addEventListener("click", () => healthPhotoInput.click());
+
+healthPhotoInput.addEventListener("change", () => {
+  const file = healthPhotoInput.files[0];
+  if (!file) return;
+  healthImageFile = file;
+  healthPhotoBtn.classList.add("has-photo");
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    healthPreview.hidden = false;
+    healthPreview.innerHTML = `
+      <img src="${reader.result}">
+      <span>${escapeHtml(file.name)}</span>
+      <button type="button" id="health-preview-remove">Remove</button>
+    `;
+    document.getElementById("health-preview-remove").addEventListener("click", clearHealthPreview);
+  };
+  reader.readAsDataURL(file);
+  updateHealthSendState();
+});
+
+healthInput.addEventListener("input", () => {
+  updateHealthSendState();
+  healthInput.style.height = "auto";
+  healthInput.style.height = Math.min(healthInput.scrollHeight, 160) + "px";
+});
+
+healthInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendHealthMessage();
+  }
+});
+
+healthSendBtn.addEventListener("click", sendHealthMessage);
+
+async function sendHealthMessage() {
+  const message = healthInput.value.trim();
+  const imageFile = healthImageFile;
+  if (!message && !imageFile) return;
+
+  let imageDataUrl = null;
+  if (imageFile) {
+    imageDataUrl = await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.readAsDataURL(imageFile);
+    });
+  }
+  addHealthMessage("user", message, imageDataUrl);
+
+  healthInput.value = "";
+  healthInput.style.height = "auto";
+  healthPreview.hidden = true;
+  healthSendBtn.disabled = true;
+  healthSendBtn.classList.remove("ready");
+
+  const priorHistory = healthHistory.slice();
+  healthHistory.push({ role: "user", content: message || "[uploaded a photo]" });
+
+  const formData = new FormData();
+  formData.append("message", message);
+  formData.append("history", JSON.stringify(priorHistory));
+  if (imageFile) formData.append("image", imageFile);
+
+  const bubble = beginHealthStreamingMessage();
+  let fullText = "";
+  let logged = false;
+
+  try {
+    const res = await fetch("/api/health/analyze", { method: "POST", body: formData });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let newlineIdx;
+      while ((newlineIdx = buffer.indexOf("\n")) !== -1) {
+        const line = buffer.slice(0, newlineIdx);
+        buffer = buffer.slice(newlineIdx + 1);
+        if (!line.trim()) continue;
+
+        const chunk = JSON.parse(line);
+        if (chunk.token) {
+          fullText += chunk.token;
+          bubble.innerHTML = renderMarkdown(fullText);
+          healthMessagesScrollEl.scrollTop = healthMessagesScrollEl.scrollHeight;
+        } else if (chunk.done) {
+          logged = chunk.logged;
+        }
+      }
+    }
+
+    healthHistory.push({ role: "assistant", content: fullText });
+
+    if (logged) {
+      // Meal finalized — reset for the next one, including the carried-along photo.
+      clearHealthPreview();
+      healthHistory = [];
+      loadHealthLog();
+    }
+  } catch (err) {
+    bubble.textContent = "Something went wrong reaching the server.";
+  } finally {
+    healthInput.focus();
   }
 }
 
@@ -1120,11 +1368,54 @@ newChatBtn.addEventListener("click", () => {
   renderChatList();
 });
 
+function switchView(view) {
+  if (view === currentView) {
+    brandEl.classList.remove("open");
+    return;
+  }
+  currentView = view;
+  brandEl.classList.remove("open");
+
+  for (const item of brandDropdown.querySelectorAll(".brand-dropdown-item")) {
+    item.classList.toggle("active", item.dataset.view === view);
+  }
+
+  if (view === "health") {
+    brandLabel.textContent = "NOVA Health";
+    workspaceLabel.textContent = "NOVA Health";
+    workspaceSub.textContent = "Photo-based calorie & nutrient tracking";
+    topbarTip.textContent = "Tip: Upload a photo of your meal to get started";
+    nebulaView.hidden = true;
+    healthView.hidden = false;
+    chatListEl.hidden = true;
+    healthSidebar.hidden = false;
+    if (!healthMessageList) showHealthEmptyState();
+    loadHealthLog();
+  } else {
+    brandLabel.textContent = "NOVA Nebula";
+    workspaceLabel.textContent = "General workspace";
+    workspaceSub.textContent = "RAG over your notes · web search when needed";
+    topbarTip.textContent = "Tip: Try typing /nova and then /supernova in the chat!";
+    nebulaView.hidden = false;
+    healthView.hidden = true;
+    chatListEl.hidden = false;
+    healthSidebar.hidden = true;
+  }
+}
+
 brandEl.addEventListener("click", (e) => {
   e.stopPropagation();
-  brandTooltip.classList.toggle("show");
+  brandEl.classList.toggle("open");
 });
-document.addEventListener("click", () => brandTooltip.classList.remove("show"));
+
+for (const item of brandDropdown.querySelectorAll(".brand-dropdown-item")) {
+  item.addEventListener("click", (e) => {
+    e.stopPropagation();
+    switchView(item.dataset.view);
+  });
+}
+
+document.addEventListener("click", () => brandEl.classList.remove("open"));
 
 setGreeting();
 renderSuggestions();

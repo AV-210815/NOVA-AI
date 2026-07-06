@@ -1,12 +1,14 @@
 import json
+from datetime import datetime, timezone
 
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import chat as chat_module
 import config
+import health
 import ingest
 import voice
 
@@ -68,6 +70,31 @@ async def transcribe(audio: UploadFile = File(...)):
     audio_bytes = await audio.read()
     text = voice.transcribe_audio(audio_bytes)
     return {"text": text}
+
+
+@app.post("/api/health/analyze")
+async def health_analyze(
+    message: str = Form(""),
+    history: str = Form("[]"),
+    image: UploadFile | None = File(None),
+):
+    history_list = json.loads(history)
+    image_bytes = await image.read() if image is not None else None
+    mime_type = image.content_type if image is not None else None
+
+    def event_stream():
+        for chunk in health.analyze_food(message, history_list, image_bytes, mime_type):
+            yield json.dumps(chunk) + "\n"
+
+    return StreamingResponse(event_stream(), media_type="application/x-ndjson")
+
+
+@app.get("/api/health/log")
+def health_log():
+    entries = health.load_log()
+    today = datetime.now(timezone.utc).date().isoformat()
+    today_total = sum(e["calories"] for e in entries if e["timestamp"].startswith(today))
+    return {"entries": entries, "today_total_calories": today_total}
 
 
 @app.post("/api/reindex")

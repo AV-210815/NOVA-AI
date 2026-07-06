@@ -47,8 +47,70 @@ textarea::placeholder { color: #55566a; }
   align-items: center;
   gap: 10px;
   padding: 4px 8px 22px 8px;
-  cursor: default;
+  cursor: pointer;
   width: fit-content;
+}
+
+.brand-caret {
+  color: #6c6d80;
+  transition: transform 0.15s;
+}
+
+.brand.open .brand-caret {
+  transform: rotate(180deg);
+}
+
+.brand-dropdown {
+  position: absolute;
+  top: calc(100% - 14px);
+  left: 8px;
+  min-width: 220px;
+  background: #161616;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  z-index: 20;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.brand.open .brand-dropdown {
+  display: flex;
+}
+
+.brand-dropdown-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.brand-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.brand-dropdown-item.active {
+  background: rgba(167, 139, 250, 0.12);
+}
+
+.brand-dropdown-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #f0eeff;
+}
+
+.brand-dropdown-sub {
+  font-size: 11.5px;
+  color: #8b8ca0;
 }
 
 .brand .logo {
@@ -63,38 +125,10 @@ textarea::placeholder { color: #55566a; }
   flex-shrink: 0;
 }
 
-.brand-tooltip {
-  position: absolute;
-  top: 50%;
-  left: calc(100% + 12px);
-  white-space: nowrap;
-  font-family: 'Bodoni Moda', serif;
-  font-style: italic;
-  font-size: 13.5px;
-  color: #f4f3f8;
-  background: #161616;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 6px 12px;
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-50%) translateX(-4px);
-  transition: opacity 0.15s, transform 0.15s;
-  z-index: 20;
-}
-
-.brand:hover .brand-tooltip,
-.brand:focus .brand-tooltip,
-.brand-tooltip.show {
-  opacity: 1;
-  transform: translateY(-50%) translateX(0);
-}
-
 .brand span {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
-  letter-spacing: 1.5px;
+  letter-spacing: 0.8px;
   color: #f4f3f8;
 }
 
@@ -573,9 +607,203 @@ main {
   50% { box-shadow: 0 0 0 6px rgba(229, 72, 77, 0); }
 }
 
-#disclaimer {
+#disclaimer,
+.disclaimer {
   text-align: center;
   font-size: 11px;
   color: #4c4d60;
   margin-top: 10px;
+}
+
+/* NOVA Health */
+
+#nebula-view,
+#health-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+#nebula-view[hidden],
+#health-view[hidden],
+#chat-list[hidden],
+#health-sidebar[hidden] {
+  display: none;
+}
+
+#health-sidebar {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+#health-today-total {
+  margin: 4px 10px 0 10px;
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(167, 139, 250, 0.08);
+  border: 1px solid rgba(167, 139, 250, 0.2);
+  font-size: 15px;
+  font-weight: 700;
+  color: #f0eeff;
+}
+
+#health-log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.health-log-item {
+  padding: 9px 10px;
+  border-radius: 9px;
+}
+
+.health-log-item-desc {
+  font-size: 13px;
+  font-weight: 500;
+  color: #d0d0e0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.health-log-item-meta {
+  font-size: 11.5px;
+  color: #6c6d80;
+  margin-top: 2px;
+}
+
+#health-messages {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#health-messages-scroll {
+  position: relative;
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+#health-empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 32px;
+}
+
+.health-photo-thumb {
+  max-width: 220px;
+  max-height: 220px;
+  border-radius: 12px;
+  margin-bottom: 6px;
+  display: block;
+}
+
+#health-composer-wrap {
+  padding: 18px 28px 24px 28px;
+}
+
+#health-composer {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+#health-input-box {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(167, 139, 250, 0.28);
+  border-radius: 16px;
+  padding: 4px 6px 4px 16px;
+  box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.06), 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+#health-message-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  color: #f0f0f5;
+  font-family: inherit;
+  font-size: 14.5px;
+  line-height: 1.5;
+  padding: 13px 4px;
+  max-height: 160px;
+}
+
+#health-photo-btn,
+#health-send-btn {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  margin-bottom: 6px;
+  border-radius: 11px;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+  transition: background 0.15s;
+}
+
+#health-photo-btn {
+  margin-right: 10px;
+  background: #161616;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 4px 14px rgba(250, 204, 21, 0.2);
+}
+
+#health-photo-btn.has-photo {
+  background: #22c55e;
+  box-shadow: none;
+}
+
+#health-send-btn.ready {
+  background: linear-gradient(135deg, #a78bfa, #7c5cf0);
+}
+
+#health-send-btn:disabled {
+  cursor: default;
+}
+
+#health-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 4px 0 4px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 12.5px;
+  color: #a4a5b8;
+}
+
+#health-preview img {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+#health-preview-remove {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #6c6d80;
+  cursor: pointer;
+  font-size: 13px;
 }
