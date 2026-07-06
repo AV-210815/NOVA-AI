@@ -801,16 +801,31 @@ function drawNovaLogo(cx, cy, progress) {
 }
 
 function triggerSupernova() {
-  if (!starfieldActive) return;
   if (starfieldRAF) {
     cancelAnimationFrame(starfieldRAF);
     starfieldRAF = null;
   }
 
-  const logoEl = document.querySelector(".empty-logo");
-  if (logoEl) {
-    logoEl.style.transition = "opacity 0.8s ease";
-    logoEl.style.opacity = "0";
+  // /supernova should work whether or not /nova was run first — start the
+  // starfield here (no logo-implosion intro, that's specific to /nova) if it
+  // isn't already active.
+  if (!starfieldActive) {
+    resizeStarfield();
+    initStars();
+    initAsteroids();
+    initISS();
+    starfieldCanvas.classList.add("active");
+    starfieldActive = true;
+    moonIcon.style.display = "none";
+  }
+
+  // Mid-chat, the starfield renders behind #messages-scroll (lower z-index),
+  // so fade the chat out to reveal it instead of the empty-state logo.
+  const hasMessages = messagesScrollEl.children.length > 0;
+  const fadeTarget = hasMessages ? messagesScrollEl : document.querySelector(".empty-logo");
+  if (fadeTarget) {
+    fadeTarget.style.transition = "opacity 0.8s ease";
+    fadeTarget.style.opacity = "0";
   }
 
   const rampDuration = 3000;
@@ -895,11 +910,11 @@ function triggerSupernova() {
         starCtx.fill();
       }
 
-      if (logoEl) {
+      if (fadeTarget) {
         // Hold off appearing until the particles have mostly converged, then fade
         // in slowly over the remaining time — a staggered reveal, not a linear one.
-        logoEl.style.transition = "none";
-        logoEl.style.opacity = String(Math.max(0, (t - 0.3) / 0.7));
+        fadeTarget.style.transition = "none";
+        fadeTarget.style.opacity = String(Math.max(0, (t - 0.3) / 0.7));
       } else {
         drawNovaLogo(cx, cy, eased);
       }
@@ -907,9 +922,9 @@ function triggerSupernova() {
       if (t < 1) {
         starfieldRAF = requestAnimationFrame(mergeFrame);
       } else {
-        if (logoEl) {
-          logoEl.style.opacity = "1";
-          logoEl.style.transition = "";
+        if (fadeTarget) {
+          fadeTarget.style.opacity = "1";
+          fadeTarget.style.transition = "";
         }
         setTimeout(() => {
           starCtx.clearRect(0, 0, starfieldCanvas.width, starfieldCanvas.height);
