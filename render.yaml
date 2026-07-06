@@ -8,3 +8,5 @@ services:
     envVars:
       - key: GEMINI_API_KEY
         sync: false
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        value: 331686735569-42976ac6v02tr7fom0laql915ribrgc5.apps.googleusercontent.com

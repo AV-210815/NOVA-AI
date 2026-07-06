@@ -1,18 +1,30 @@
 import json
+import os
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, File, Form, UploadFile
+from fastapi import Cookie, Depends, FastAPI, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import auth
 import chat as chat_module
 import config
+import db
 import health
 import ingest
 import voice
 
+db.init_db()
+
 app = FastAPI(title="NOVA semantic search")
+
+
+def require_user(nova_session: str | None = Cookie(default=None)) -> dict:
+    user = auth.get_current_user(nova_session)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
 
 
 class ChatMessage(BaseModel):
@@ -25,8 +37,62 @@ class ChatRequest(BaseModel):
     history: list[ChatMessage] = []
 
 
+class DeleteHealthEntryRequest(BaseModel):
+    timestamp: str
+
+
+class GoogleLoginRequest(BaseModel):
+    credential: str
+
+
+class SaveChatRequest(BaseModel):
+    id: str
+    title: str
+    messages: list[dict]
+
+
+def _public_user(user: dict) -> dict:
+    return {"email": user["email"], "name": user["name"], "picture": user["picture"]}
+
+
+@app.get("/api/auth/config")
+def auth_config():
+    return {"client_id": config.GOOGLE_OAUTH_CLIENT_ID}
+
+
+@app.post("/api/auth/google")
+def auth_google(req: GoogleLoginRequest, response: Response):
+    try:
+        session_token, user = auth.login_with_google_token(req.credential)
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    response.set_cookie(
+        key=auth.SESSION_COOKIE,
+        value=session_token,
+        httponly=True,
+        samesite="lax",
+        secure=bool(os.environ.get("RENDER")),
+        max_age=db.SESSION_LIFETIME_SECONDS,
+    )
+    return _public_user(user)
+
+
+@app.post("/api/auth/logout")
+def auth_logout(response: Response, nova_session: str | None = Cookie(default=None)):
+    if nova_session:
+        db.delete_session(nova_session)
+    response.delete_cookie(auth.SESSION_COOKIE)
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+def auth_me(nova_session: str | None = Cookie(default=None)):
+    user = auth.get_current_user(nova_session)
+    return {"user": _public_user(user) if user else None}
+
+
 @app.post("/api/chat")
-def chat(req: ChatRequest):
+def chat(req: ChatRequest, user: dict = Depends(require_user)):
     history = [m.model_dump() for m in req.history]
 
     def event_stream():
@@ -36,8 +102,33 @@ def chat(req: ChatRequest):
     return StreamingResponse(event_stream(), media_type="application/x-ndjson")
 
 
+@app.get("/api/chats")
+def chats_list(user: dict = Depends(require_user)):
+    return {"chats": db.list_chats(user["id"])}
+
+
+@app.get("/api/chats/{chat_id}")
+def chats_get(chat_id: str, user: dict = Depends(require_user)):
+    chat_data = db.get_chat(user["id"], chat_id)
+    if not chat_data:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    return chat_data
+
+
+@app.post("/api/chats")
+def chats_save(req: SaveChatRequest, user: dict = Depends(require_user)):
+    db.save_chat(user["id"], req.id, req.title, req.messages)
+    return {"ok": True}
+
+
+@app.delete("/api/chats/{chat_id}")
+def chats_delete(chat_id: str, user: dict = Depends(require_user)):
+    db.delete_chat(user["id"], chat_id)
+    return {"ok": True}
+
+
 @app.get("/api/search")
-def search(q: str, k: int = 8):
+def search(q: str, k: int = 8, user: dict = Depends(require_user)):
     collection = ingest.get_collection()
 
     if collection.count() == 0:
@@ -66,7 +157,7 @@ def search(q: str, k: int = 8):
 
 
 @app.post("/api/transcribe")
-async def transcribe(audio: UploadFile = File(...)):
+async def transcribe(audio: UploadFile = File(...), user: dict = Depends(require_user)):
     audio_bytes = await audio.read()
     text = voice.transcribe_audio(audio_bytes)
     return {"text": text}
@@ -77,33 +168,40 @@ async def health_analyze(
     message: str = Form(""),
     history: str = Form("[]"),
     image: UploadFile | None = File(None),
+    user: dict = Depends(require_user),
 ):
     history_list = json.loads(history)
     image_bytes = await image.read() if image is not None else None
     mime_type = image.content_type if image is not None else None
 
     def event_stream():
-        for chunk in health.analyze_food(message, history_list, image_bytes, mime_type):
+        for chunk in health.analyze_food(user["id"], message, history_list, image_bytes, mime_type):
             yield json.dumps(chunk) + "\n"
 
     return StreamingResponse(event_stream(), media_type="application/x-ndjson")
 
 
 @app.get("/api/health/log")
-def health_log():
-    entries = health.load_log()
+def health_log(user: dict = Depends(require_user)):
+    entries = db.load_health_entries(user["id"])
     today = datetime.now(timezone.utc).date().isoformat()
     today_total = sum(e["calories"] for e in entries if e["timestamp"].startswith(today))
     return {"entries": entries, "today_total_calories": today_total}
 
 
+@app.post("/api/health/log/delete")
+def health_log_delete(req: DeleteHealthEntryRequest, user: dict = Depends(require_user)):
+    deleted = db.delete_health_entry(user["id"], req.timestamp)
+    return {"deleted": deleted}
+
+
 @app.post("/api/reindex")
-def reindex():
+def reindex(user: dict = Depends(require_user)):
     return ingest.reindex()
 
 
 @app.get("/api/stats")
-def stats():
+def stats(user: dict = Depends(require_user)):
     collection = ingest.get_collection()
     manifest = ingest.load_manifest()
     return {"total_chunks": collection.count(), "total_files": len(manifest)}

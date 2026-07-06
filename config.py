@@ -55,6 +55,16 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 # so it's a real memory risk on Render's free tier; fine for local use.
 WHISPER_MODEL = "base"
 
-# NOVA Health: photo-based food/calorie tracking. Gemini's own vision input
-# handles the image analysis, so no separate vision model/dependency is needed.
-HEALTH_LOG_PATH = BASE_DIR / "health_log.json"
+# DATA_DIR holds the per-user database (accounts, chat history, health logs).
+# Defaults to the project directory for local dev; on Render this is set to the
+# mounted persistent disk path so data survives redeploys — a plain local path
+# would otherwise be wiped on every deploy, same issue that hit the old
+# single-file health log.
+DATA_DIR = Path(os.environ.get("DATA_DIR", str(BASE_DIR)))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+DB_PATH = DATA_DIR / "nova.db"
+
+# Google Sign-In OAuth Client ID. Not a secret (it's designed to be embedded in
+# frontend JS) — only the ID token signature verification server-side matters
+# for security, which needs no client secret for this flow.
+GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")

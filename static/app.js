@@ -31,6 +31,14 @@ const workspaceLabel = document.getElementById("workspace-label");
 const workspaceSub = document.getElementById("workspace-sub");
 const topbarTip = document.getElementById("topbar-tip");
 
+const loginOverlay = document.getElementById("login-overlay");
+const appEl = document.getElementById("app");
+const googleSigninBtn = document.getElementById("google-signin-btn");
+const accountAvatar = document.getElementById("account-avatar");
+const accountName = document.getElementById("account-name");
+const accountEmail = document.getElementById("account-email");
+const accountSignoutBtn = document.getElementById("account-signout-btn");
+
 const SUGGESTIONS = [
   "Summarize this week's notes",
   "What have I been doing to improve my health?",
@@ -209,13 +217,13 @@ function randomThinkingPhrase() {
   return THINKING_PHRASES[Math.floor(Math.random() * THINKING_PHRASES.length)];
 }
 
-const CHATS_KEY = "nova.chats";
-const ACTIVE_CHAT_KEY = "nova.activeChatId";
-
 let history = [];
 let messageList = null;
-let chats = loadChats();
-let activeChatId = localStorage.getItem(ACTIVE_CHAT_KEY);
+// Chats holds only lightweight {id, title, updatedAt} entries, fetched from
+// /api/chats — full messages are loaded on demand per-chat, keeping the list
+// itself cheap regardless of how many chats or how long each one is.
+let chats = [];
+let activeChatId = null;
 
 let currentView = "nebula";
 let healthHistory = [];
@@ -225,25 +233,14 @@ let healthMessageList = null;
 // image once a clarifying question moves the conversation to text-only replies.
 let healthImageFile = null;
 
-function loadChats() {
-  try {
-    return JSON.parse(localStorage.getItem(CHATS_KEY)) || [];
-  } catch {
-    return [];
-  }
-}
-
-function saveChats() {
-  localStorage.setItem(CHATS_KEY, JSON.stringify(chats));
+async function loadChats() {
+  const res = await fetch("/api/chats");
+  const data = await res.json();
+  chats = data.chats;
 }
 
 function setActiveChatId(id) {
   activeChatId = id;
-  if (id) {
-    localStorage.setItem(ACTIVE_CHAT_KEY, id);
-  } else {
-    localStorage.removeItem(ACTIVE_CHAT_KEY);
-  }
 }
 
 function chatTitleFrom(messages) {
@@ -252,32 +249,38 @@ function chatTitleFrom(messages) {
   return firstUser.content.length > 40 ? firstUser.content.slice(0, 40) + "…" : firstUser.content;
 }
 
-function persistCurrentChat() {
+async function persistCurrentChat() {
   if (!activeChatId) {
     setActiveChatId(crypto.randomUUID());
-    chats.push({ id: activeChatId, title: "New chat", messages: [], updatedAt: 0 });
+    chats.push({ id: activeChatId, title: "New chat", updatedAt: 0 });
   }
-  const chat = chats.find(c => c.id === activeChatId);
-  chat.messages = history;
-  chat.title = chatTitleFrom(history);
-  chat.updatedAt = Date.now();
-  saveChats();
+  const title = chatTitleFrom(history);
+  await fetch("/api/chats", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: activeChatId, title, messages: history }),
+  });
+  const chatMeta = chats.find(c => c.id === activeChatId);
+  if (chatMeta) {
+    chatMeta.title = title;
+    chatMeta.updatedAt = Date.now();
+  }
   renderChatList();
 }
 
 let confirmingDeleteId = null;
 let confirmingDeleteTimeout = null;
 
-function deleteChat(id) {
+async function deleteChat(id) {
   chats = chats.filter(c => c.id !== id);
-  saveChats();
+  renderChatList();
+  await fetch(`/api/chats/${id}`, { method: "DELETE" });
   if (id === activeChatId) {
     history = [];
     setActiveChatId(null);
     clearMessageArea();
     showEmptyState();
   }
-  renderChatList();
 }
 
 function renderChatList() {
@@ -331,11 +334,13 @@ function clearMessageArea() {
   if (existingEmpty) existingEmpty.remove();
 }
 
-function switchToChat(id) {
+async function switchToChat(id) {
   if (id === activeChatId) return;
   setActiveChatId(id);
-  const chat = chats.find(c => c.id === id);
-  history = chat ? chat.messages.slice() : [];
+  renderChatList();
+
+  const res = await fetch(`/api/chats/${id}`);
+  history = res.ok ? (await res.json()).messages.slice() : [];
 
   clearMessageArea();
   if (history.length === 0) {
@@ -345,7 +350,6 @@ function switchToChat(id) {
       addMessage(m.role, m.content, m.sources, m.webSources);
     }
   }
-  renderChatList();
 }
 
 function escapeHtml(str) {
@@ -536,6 +540,8 @@ function mealSummaryText(entry) {
     `**Low in:** ${deficiencies}`;
 }
 
+let shownMealTimestamp = null;
+
 function showLoggedMeal(entry, itemEl) {
   healthHistory = [];
   clearHealthPreview();
@@ -547,7 +553,28 @@ function showLoggedMeal(entry, itemEl) {
     el.classList.remove("active");
   }
   itemEl.classList.add("active");
+  shownMealTimestamp = entry.timestamp;
   addHealthMessage("assistant", mealSummaryText(entry));
+}
+
+let confirmingHealthDeleteTimestamp = null;
+let confirmingHealthDeleteTimeout = null;
+
+async function deleteHealthEntry(timestamp) {
+  try {
+    await fetch("/api/health/log/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timestamp }),
+    });
+  } catch (err) {
+    // Fall through to reload regardless — worst case the item reappears if the delete failed.
+  }
+  if (timestamp === shownMealTimestamp) {
+    shownMealTimestamp = null;
+    showHealthEmptyState();
+  }
+  loadHealthLog();
 }
 
 async function loadHealthLog() {
@@ -558,6 +585,9 @@ async function loadHealthLog() {
 
     healthLogList.innerHTML = "";
     for (const entry of [...data.entries].reverse()) {
+      const row = document.createElement("div");
+      row.className = "health-log-item-row";
+
       const item = document.createElement("button");
       item.type = "button";
       item.className = "health-log-item";
@@ -567,7 +597,35 @@ async function loadHealthLog() {
         <div class="health-log-item-meta">${Math.round(entry.calories)} kcal · ${escapeHtml(time)}</div>
       `;
       item.addEventListener("click", () => showLoggedMeal(entry, item));
-      healthLogList.appendChild(item);
+
+      const isConfirming = entry.timestamp === confirmingHealthDeleteTimestamp;
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "health-log-delete-btn" + (isConfirming ? " confirming" : "");
+      del.setAttribute("aria-label", isConfirming ? "Confirm delete" : "Delete logged meal");
+      del.innerHTML = isConfirming
+        ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>'
+        : '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+
+      del.addEventListener("click", (e) => {
+        e.stopPropagation();
+        clearTimeout(confirmingHealthDeleteTimeout);
+        if (confirmingHealthDeleteTimestamp === entry.timestamp) {
+          confirmingHealthDeleteTimestamp = null;
+          deleteHealthEntry(entry.timestamp);
+        } else {
+          confirmingHealthDeleteTimestamp = entry.timestamp;
+          loadHealthLog();
+          confirmingHealthDeleteTimeout = setTimeout(() => {
+            confirmingHealthDeleteTimestamp = null;
+            loadHealthLog();
+          }, 3000);
+        }
+      });
+
+      row.appendChild(item);
+      row.appendChild(del);
+      healthLogList.appendChild(row);
     }
   } catch (err) {
     // Log sidebar is a nice-to-have; a failed fetch shouldn't block the rest of the view.
@@ -1450,17 +1508,72 @@ for (const item of brandDropdown.querySelectorAll(".brand-dropdown-item")) {
 
 document.addEventListener("click", () => brandEl.classList.remove("open"));
 
-setGreeting();
-renderSuggestions();
-
-const initialChat = chats.find(c => c.id === activeChatId);
-if (initialChat) {
-  history = initialChat.messages.slice();
-  clearMessageArea();
-  for (const m of history) {
-    addMessage(m.role, m.content, m.sources, m.webSources);
-  }
-} else {
-  setActiveChatId(null);
+function waitForGoogleIdentity() {
+  return new Promise((resolve) => {
+    if (window.google && window.google.accounts) {
+      resolve();
+      return;
+    }
+    const check = setInterval(() => {
+      if (window.google && window.google.accounts) {
+        clearInterval(check);
+        resolve();
+      }
+    }, 50);
+  });
 }
-renderChatList();
+
+async function handleGoogleCredential(response) {
+  const res = await fetch("/api/auth/google", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ credential: response.credential }),
+  });
+  if (res.ok) {
+    window.location.reload();
+  }
+}
+
+accountSignoutBtn.addEventListener("click", async () => {
+  await fetch("/api/auth/logout", { method: "POST" });
+  window.location.reload();
+});
+
+async function showLoginScreen() {
+  const configRes = await fetch("/api/auth/config");
+  const configData = await configRes.json();
+
+  await waitForGoogleIdentity();
+  google.accounts.id.initialize({
+    client_id: configData.client_id,
+    callback: handleGoogleCredential,
+  });
+  google.accounts.id.renderButton(googleSigninBtn, { theme: "filled_black", size: "large", shape: "pill" });
+
+  loginOverlay.hidden = false;
+  appEl.hidden = true;
+}
+
+async function init() {
+  const meRes = await fetch("/api/auth/me");
+  const meData = await meRes.json();
+
+  if (!meData.user) {
+    await showLoginScreen();
+    return;
+  }
+
+  loginOverlay.hidden = true;
+  appEl.hidden = false;
+  accountAvatar.src = meData.user.picture || "";
+  accountName.textContent = meData.user.name || meData.user.email;
+  accountEmail.textContent = meData.user.email;
+
+  setGreeting();
+  renderSuggestions();
+  await loadChats();
+  showEmptyState();
+  renderChatList();
+}
+
+init();

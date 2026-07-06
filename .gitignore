@@ -6,3 +6,4 @@ venv/
 .env
 notes/
 health_log.json
+nova.db

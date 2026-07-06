@@ -4,15 +4,15 @@ The user uploads a photo of a meal; Gemini's vision input identifies the food
 (with extra care for Indian dishes that are easy to confuse — dal vs sambar,
 milk vs curd, etc.), asks a clarifying question in plain text if it isn't
 confident, and otherwise calls the log_meal tool with its analysis, which we
-persist to a small local JSON log.
+persist per-user in the database.
 """
-import json
 from datetime import datetime, timezone
 
 from google import genai
 from google.genai import types
 
 import config
+import db
 
 client = genai.Client(api_key=config.GEMINI_API_KEY)
 
@@ -90,22 +90,6 @@ SYSTEM_PROMPT = (
 )
 
 
-def load_log() -> list[dict]:
-    if not config.HEALTH_LOG_PATH.exists():
-        return []
-    return json.loads(config.HEALTH_LOG_PATH.read_text())
-
-
-def save_log(entries: list[dict]) -> None:
-    config.HEALTH_LOG_PATH.write_text(json.dumps(entries, indent=2))
-
-
-def append_entry(entry: dict) -> None:
-    entries = load_log()
-    entries.append(entry)
-    save_log(entries)
-
-
 def _build_contents(history: list[dict], message: str, image_bytes: bytes | None, mime_type: str | None) -> list:
     contents = []
     for h in history:
@@ -121,7 +105,13 @@ def _build_contents(history: list[dict], message: str, image_bytes: bytes | None
     return contents
 
 
-def analyze_food(message: str, history: list[dict], image_bytes: bytes | None = None, mime_type: str | None = None):
+def analyze_food(
+    user_id: int,
+    message: str,
+    history: list[dict],
+    image_bytes: bytes | None = None,
+    mime_type: str | None = None,
+):
     """Yields {"token": str} chunks, then a final
     {"done": True, "logged": bool, "entry": dict | None}.
     """
@@ -160,7 +150,7 @@ def analyze_food(message: str, history: list[dict], image_bytes: bytes | None = 
         "nutrients_present": list(args.get("nutrients_present", [])),
         "deficiencies": list(args.get("deficiencies", [])),
     }
-    append_entry(entry)
+    db.append_health_entry(user_id, entry)
 
     nutrients_str = ", ".join(entry["nutrients_present"]) or "none noted"
     deficiencies_str = ", ".join(entry["deficiencies"]) or "none noted"
