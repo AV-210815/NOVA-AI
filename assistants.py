@@ -6,6 +6,10 @@ football GOAT debates) but identifies itself correctly by its own name/model, an
 is backed by its own provider. NOVA Nebula is the only one with retrieval-augmented
 generation over the user's notes — the others are plain conversational chat.
 """
+import json
+from datetime import datetime
+from zoneinfo import ZoneInfo, available_timezones
+
 from openai import OpenAI
 
 from google import genai
@@ -18,6 +22,64 @@ _gemini_client = genai.Client(api_key=config.GEMINI_API_KEY)
 _groq_client = OpenAI(api_key=config.GROQ_API_KEY, base_url="https://api.groq.com/openai/v1")
 _openrouter_client = OpenAI(api_key=config.OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1")
 
+# Built-in world clock — not a feature the user is told about explicitly; the
+# model just quietly calls this whenever it needs the actual current time or
+# date somewhere, instead of guessing from stale training data.
+_VALID_TIMEZONES = available_timezones()
+
+
+def get_current_time(timezone_name: str) -> str:
+    if timezone_name not in _VALID_TIMEZONES:
+        return f"Unknown or invalid IANA timezone: '{timezone_name}'"
+    now = datetime.now(ZoneInfo(timezone_name))
+    return now.strftime("%A, %B %d, %Y, %I:%M %p %Z")
+
+
+_TIME_TOOL_DESCRIPTION = (
+    "Get the current real date and time in a specific place. Always use this "
+    "instead of guessing whenever the user asks what time or date it is "
+    "somewhere, references 'now'/'today'/'currently' in relation to a specific "
+    "place, or needs a time comparison between two places — your training data "
+    "has no live clock, so any date/time you state without calling this is "
+    "necessarily wrong. Never mention this tool, that you called it, or how you "
+    "know the time — just answer naturally as if you simply knew it."
+)
+
+WORLD_CLOCK_TOOL_GEMINI = types.Tool(function_declarations=[
+    types.FunctionDeclaration(
+        name="get_current_time",
+        description=_TIME_TOOL_DESCRIPTION,
+        parameters={
+            "type": "OBJECT",
+            "properties": {
+                "timezone": {
+                    "type": "STRING",
+                    "description": "IANA timezone identifier for the place asked about, e.g. 'Asia/Tokyo', 'America/New_York', 'Europe/London'.",
+                },
+            },
+            "required": ["timezone"],
+        },
+    )
+])
+
+WORLD_CLOCK_TOOL_OPENAI = {
+    "type": "function",
+    "function": {
+        "name": "get_current_time",
+        "description": _TIME_TOOL_DESCRIPTION,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "timezone": {
+                    "type": "string",
+                    "description": "IANA timezone identifier for the place asked about, e.g. 'Asia/Tokyo', 'America/New_York', 'Europe/London'.",
+                },
+            },
+            "required": ["timezone"],
+        },
+    },
+}
+
 MAX_OUTPUT_TOKENS = 8192
 # Groq/OpenRouter free tiers enforce tight tokens-per-minute limits that vary by
 # model (some as low as 6000 TPM total, prompt + completion combined) — a lower,
@@ -29,7 +91,10 @@ BASE_PERSONALITY = (
     "\n\nYou do not have web search — answer entirely from your own knowledge. For "
     "anything time-sensitive (current events, who currently holds a role, recent "
     "releases, current prices), say plainly that your knowledge has a training cutoff "
-    "and the answer may be out of date, rather than guessing confidently.\n\n"
+    "and the answer may be out of date, rather than guessing confidently. The one "
+    "exception is the actual current date/time somewhere: you DO have a real, live "
+    "get_current_time tool for that specific case — call it rather than giving the "
+    "training-cutoff disclaimer, which does not apply to that tool's results.\n\n"
     "Never use profanity or swear words in your responses, even if the user does, even "
     "in quotes, jokes, or when asked to repeat/translate/analyze text that contains them "
     "— paraphrase or use a placeholder like \"[expletive]\" instead.\n\n"
@@ -161,8 +226,28 @@ def _stream_gemini(model: str, system_prompt: str, user_message: str, history: l
     contents = _build_gemini_contents(user_message, history)
     gen_config = types.GenerateContentConfig(
         system_instruction=system_prompt,
+        tools=[WORLD_CLOCK_TOOL_GEMINI],
         max_output_tokens=MAX_OUTPUT_TOKENS,
     )
+
+    function_call = None
+    for chunk in _gemini_client.models.generate_content_stream(model=model, contents=contents, config=gen_config):
+        if not chunk.candidates or not chunk.candidates[0].content:
+            continue
+        for part in chunk.candidates[0].content.parts or []:
+            if part.function_call is not None:
+                function_call = part.function_call
+            elif part.text:
+                yield part.text
+
+    if function_call is None or function_call.name != "get_current_time":
+        return
+
+    result = get_current_time(function_call.args.get("timezone", ""))
+    contents.append(types.Content(role="model", parts=[types.Part(function_call=function_call)]))
+    contents.append(types.Content(role="user", parts=[
+        types.Part(function_response=types.FunctionResponse(name="get_current_time", response={"result": result}))
+    ]))
     for chunk in _gemini_client.models.generate_content_stream(model=model, contents=contents, config=gen_config):
         if not chunk.candidates or not chunk.candidates[0].content:
             continue
@@ -183,9 +268,56 @@ def _stream_openai_compatible(client: OpenAI, model: str, system_prompt: str, us
         messages=messages,
         max_tokens=OPENAI_COMPATIBLE_MAX_OUTPUT_TOKENS,
         stream=True,
+        tools=[WORLD_CLOCK_TOOL_OPENAI],
         extra_body=extra_body,
     )
+
+    tool_calls = {}
     for chunk in stream:
+        if not chunk.choices:
+            continue
+        delta = chunk.choices[0].delta
+        if delta.tool_calls:
+            for tc in delta.tool_calls:
+                slot = tool_calls.setdefault(tc.index, {"id": "", "name": "", "arguments": ""})
+                if tc.id:
+                    slot["id"] = tc.id
+                if tc.function and tc.function.name:
+                    slot["name"] += tc.function.name
+                if tc.function and tc.function.arguments:
+                    slot["arguments"] += tc.function.arguments
+        elif delta.content:
+            yield delta.content
+
+    if not tool_calls:
+        return
+
+    messages.append({
+        "role": "assistant",
+        "tool_calls": [
+            {"id": tc["id"], "type": "function", "function": {"name": tc["name"], "arguments": tc["arguments"]}}
+            for tc in tool_calls.values()
+        ],
+    })
+    for tc in tool_calls.values():
+        if tc["name"] == "get_current_time":
+            try:
+                args = json.loads(tc["arguments"])
+            except json.JSONDecodeError:
+                args = {}
+            result = get_current_time(args.get("timezone", ""))
+        else:
+            result = f"Unknown function: {tc['name']}"
+        messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
+
+    stream2 = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        max_tokens=OPENAI_COMPATIBLE_MAX_OUTPUT_TOKENS,
+        stream=True,
+        extra_body=extra_body,
+    )
+    for chunk in stream2:
         delta = chunk.choices[0].delta.content if chunk.choices else None
         if delta:
             yield delta
