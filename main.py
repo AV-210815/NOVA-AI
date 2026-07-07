@@ -7,8 +7,8 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import assistants
 import auth
-import chat as chat_module
 import config
 import db
 import health
@@ -35,6 +35,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     history: list[ChatMessage] = []
+    assistant: str = "nebula"
 
 
 class DeleteHealthEntryRequest(BaseModel):
@@ -49,6 +50,7 @@ class SaveChatRequest(BaseModel):
     id: str
     title: str
     messages: list[dict]
+    assistant: str = "nebula"
 
 
 def _public_user(user: dict) -> dict:
@@ -91,25 +93,36 @@ def auth_me(nova_session: str | None = Cookie(default=None)):
     return {"user": _public_user(user) if user else None}
 
 
+@app.get("/api/assistants")
+def assistants_list():
+    return {
+        "assistants": [
+            {"id": aid, "name": a["name"], "icon": a["icon"], "subtitle": a["subtitle"]}
+            for aid, a in assistants.ASSISTANTS.items()
+        ]
+    }
+
+
 @app.post("/api/chat")
 def chat(req: ChatRequest, user: dict = Depends(require_user)):
     history = [m.model_dump() for m in req.history]
+    assistant_id = req.assistant if req.assistant in assistants.ASSISTANTS else "nebula"
 
     def event_stream():
-        for chunk in chat_module.chat_stream(req.message, history):
+        for chunk in assistants.chat_stream(assistant_id, req.message, history):
             yield json.dumps(chunk) + "\n"
 
     return StreamingResponse(event_stream(), media_type="application/x-ndjson")
 
 
 @app.get("/api/chats")
-def chats_list(user: dict = Depends(require_user)):
-    return {"chats": db.list_chats(user["id"])}
+def chats_list(assistant: str = "nebula", user: dict = Depends(require_user)):
+    return {"chats": db.list_chats(user["id"], assistant)}
 
 
 @app.get("/api/chats/{chat_id}")
-def chats_get(chat_id: str, user: dict = Depends(require_user)):
-    chat_data = db.get_chat(user["id"], chat_id)
+def chats_get(chat_id: str, assistant: str = "nebula", user: dict = Depends(require_user)):
+    chat_data = db.get_chat(user["id"], assistant, chat_id)
     if not chat_data:
         raise HTTPException(status_code=404, detail="Chat not found")
     return chat_data
@@ -117,13 +130,13 @@ def chats_get(chat_id: str, user: dict = Depends(require_user)):
 
 @app.post("/api/chats")
 def chats_save(req: SaveChatRequest, user: dict = Depends(require_user)):
-    db.save_chat(user["id"], req.id, req.title, req.messages)
+    db.save_chat(user["id"], req.assistant, req.id, req.title, req.messages)
     return {"ok": True}
 
 
 @app.delete("/api/chats/{chat_id}")
-def chats_delete(chat_id: str, user: dict = Depends(require_user)):
-    db.delete_chat(user["id"], chat_id)
+def chats_delete(chat_id: str, assistant: str = "nebula", user: dict = Depends(require_user)):
+    db.delete_chat(user["id"], assistant, chat_id)
     return {"ok": True}
 
 

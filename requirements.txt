@@ -4,3 +4,4 @@ python-multipart
 chromadb
 google-genai
 google-auth
+openai

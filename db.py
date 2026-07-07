@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS chats (
     id TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id),
+    assistant TEXT NOT NULL DEFAULT 'nebula',
     title TEXT NOT NULL,
     messages_json TEXT NOT NULL,
     updated_at INTEGER NOT NULL
@@ -67,6 +68,9 @@ def init_db() -> None:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(health_entries)")}
         if "items_json" not in columns:
             conn.execute("ALTER TABLE health_entries ADD COLUMN items_json TEXT NOT NULL DEFAULT '[]'")
+        chat_columns = {row["name"] for row in conn.execute("PRAGMA table_info(chats)")}
+        if "assistant" not in chat_columns:
+            conn.execute("ALTER TABLE chats ADD COLUMN assistant TEXT NOT NULL DEFAULT 'nebula'")
 
 
 # --- Users & sessions ---
@@ -119,20 +123,20 @@ def delete_session(token: str) -> None:
 
 # --- Chats ---
 
-def list_chats(user_id: int) -> list[dict]:
+def list_chats(user_id: int, assistant: str) -> list[dict]:
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT id, title, updated_at FROM chats WHERE user_id = ? ORDER BY updated_at DESC",
-            (user_id,),
+            "SELECT id, title, updated_at FROM chats WHERE user_id = ? AND assistant = ? ORDER BY updated_at DESC",
+            (user_id, assistant),
         ).fetchall()
         return [{"id": r["id"], "title": r["title"], "updatedAt": r["updated_at"]} for r in rows]
 
 
-def get_chat(user_id: int, chat_id: str) -> dict | None:
+def get_chat(user_id: int, assistant: str, chat_id: str) -> dict | None:
     with get_db() as conn:
         row = conn.execute(
-            "SELECT id, title, messages_json, updated_at FROM chats WHERE user_id = ? AND id = ?",
-            (user_id, chat_id),
+            "SELECT id, title, messages_json, updated_at FROM chats WHERE user_id = ? AND assistant = ? AND id = ?",
+            (user_id, assistant, chat_id),
         ).fetchone()
         if not row:
             return None
@@ -144,21 +148,21 @@ def get_chat(user_id: int, chat_id: str) -> dict | None:
         }
 
 
-def save_chat(user_id: int, chat_id: str, title: str, messages: list[dict]) -> None:
+def save_chat(user_id: int, assistant: str, chat_id: str, title: str, messages: list[dict]) -> None:
     with get_db() as conn:
         conn.execute(
             """
-            INSERT INTO chats (id, user_id, title, messages_json, updated_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO chats (id, user_id, assistant, title, messages_json, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET title=excluded.title, messages_json=excluded.messages_json, updated_at=excluded.updated_at
             """,
-            (chat_id, user_id, title, json.dumps(messages), int(time.time() * 1000)),
+            (chat_id, user_id, assistant, title, json.dumps(messages), int(time.time() * 1000)),
         )
 
 
-def delete_chat(user_id: int, chat_id: str) -> None:
+def delete_chat(user_id: int, assistant: str, chat_id: str) -> None:
     with get_db() as conn:
-        conn.execute("DELETE FROM chats WHERE user_id = ? AND id = ?", (user_id, chat_id))
+        conn.execute("DELETE FROM chats WHERE user_id = ? AND assistant = ? AND id = ?", (user_id, assistant, chat_id))
 
 
 # --- NOVA Nutrition entries ---

@@ -225,7 +225,8 @@ let messageList = null;
 let chats = [];
 let activeChatId = null;
 
-let currentView = "nebula";
+let currentView = "chat";
+let currentAssistant = "nebula";
 let healthHistory = [];
 let healthMessageList = null;
 // Kept across a whole meal-logging exchange (not cleared after the first send) so
@@ -234,7 +235,7 @@ let healthMessageList = null;
 let healthImageFile = null;
 
 async function loadChats() {
-  const res = await fetch("/api/chats");
+  const res = await fetch(`/api/chats?assistant=${currentAssistant}`);
   const data = await res.json();
   chats = data.chats;
 }
@@ -258,7 +259,7 @@ async function persistCurrentChat() {
   await fetch("/api/chats", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id: activeChatId, title, messages: history }),
+    body: JSON.stringify({ id: activeChatId, title, messages: history, assistant: currentAssistant }),
   });
   const chatMeta = chats.find(c => c.id === activeChatId);
   if (chatMeta) {
@@ -274,7 +275,7 @@ let confirmingDeleteTimeout = null;
 async function deleteChat(id) {
   chats = chats.filter(c => c.id !== id);
   renderChatList();
-  await fetch(`/api/chats/${id}`, { method: "DELETE" });
+  await fetch(`/api/chats/${id}?assistant=${currentAssistant}`, { method: "DELETE" });
   if (id === activeChatId) {
     history = [];
     setActiveChatId(null);
@@ -339,7 +340,7 @@ async function switchToChat(id) {
   setActiveChatId(id);
   renderChatList();
 
-  const res = await fetch(`/api/chats/${id}`);
+  const res = await fetch(`/api/chats/${id}?assistant=${currentAssistant}`);
   history = res.ok ? (await res.json()).messages.slice() : [];
 
   clearMessageArea();
@@ -1323,7 +1324,7 @@ async function sendMessage() {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, history: priorHistory }),
+      body: JSON.stringify({ message, history: priorHistory, assistant: currentAssistant }),
     });
 
     const reader = res.body.getReader();
@@ -1462,16 +1463,27 @@ newChatBtn.addEventListener("click", () => {
   renderChatList();
 });
 
-function switchView(view) {
-  if (view === currentView) {
-    brandEl.classList.remove("open");
-    return;
-  }
-  currentView = view;
+const ASSISTANT_META = {
+  nebula: { label: "✨ NOVA-Nebula", sub: "RAG over your notes · Gemini 2.5 Flash", tip: "Tip: Try typing /nova and then /supernova in the chat!" },
+  sirius: { label: "⭐ NOVA-Sirius", sub: "Groq · Llama 3.3 70B (free)", tip: "Tip: Ask me anything — powered by Llama 3.3 70B via Groq." },
+  sol: { label: "🌞 NOVA-Sol", sub: "Gemini 2.5 Flash", tip: "Tip: A general-purpose assistant, no notes retrieval here." },
+  supernova: { label: "💥 NOVA-Supernova", sub: "GPT-OSS 120B via OpenRouter (free)", tip: "Tip: A large reasoning-focused model, free via OpenRouter." },
+  m618: { label: "🕳️ NOVA-618", sub: "Qwen 3 32B via Groq (free)", tip: "Tip: Fast responses, powered by Qwen 3 32B via Groq." },
+};
+
+async function switchView(view, assistantId) {
   brandEl.classList.remove("open");
+  const assistantChanged = view === "chat" && assistantId && assistantId !== currentAssistant;
+  if (view === currentView && !assistantChanged) return;
+
+  currentView = view;
+  if (assistantId) currentAssistant = assistantId;
 
   for (const item of brandDropdown.querySelectorAll(".brand-dropdown-item")) {
-    item.classList.toggle("active", item.dataset.view === view);
+    const matches = view === "health"
+      ? item.dataset.view === "health"
+      : (item.dataset.view === "chat" && item.dataset.assistant === currentAssistant);
+    item.classList.toggle("active", matches);
   }
 
   if (view === "health") {
@@ -1485,15 +1497,26 @@ function switchView(view) {
     healthSidebar.hidden = false;
     if (!healthMessageList) showHealthEmptyState();
     loadHealthLog();
-  } else {
-    brandLabel.textContent = "NOVA Nebula";
-    workspaceLabel.textContent = "General workspace";
-    workspaceSub.textContent = "RAG over your notes · web search when needed";
-    topbarTip.textContent = "Tip: Try typing /nova and then /supernova in the chat!";
-    nebulaView.hidden = false;
-    healthView.hidden = true;
-    chatListEl.hidden = false;
-    healthSidebar.hidden = true;
+    return;
+  }
+
+  const meta = ASSISTANT_META[currentAssistant];
+  brandLabel.textContent = meta.label;
+  workspaceLabel.textContent = meta.label;
+  workspaceSub.textContent = meta.sub;
+  topbarTip.textContent = meta.tip;
+  nebulaView.hidden = false;
+  healthView.hidden = true;
+  chatListEl.hidden = false;
+  healthSidebar.hidden = true;
+
+  if (assistantChanged) {
+    history = [];
+    setActiveChatId(null);
+    clearMessageArea();
+    showEmptyState();
+    await loadChats();
+    renderChatList();
   }
 }
 
@@ -1505,7 +1528,7 @@ brandEl.addEventListener("click", (e) => {
 for (const item of brandDropdown.querySelectorAll(".brand-dropdown-item")) {
   item.addEventListener("click", (e) => {
     e.stopPropagation();
-    switchView(item.dataset.view);
+    switchView(item.dataset.view, item.dataset.assistant);
   });
 }
 

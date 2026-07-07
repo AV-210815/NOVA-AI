@@ -68,3 +68,8 @@ DB_PATH = DATA_DIR / "nova.db"
 # frontend JS) — only the ID token signature verification server-side matters
 # for security, which needs no client secret for this flow.
 GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+
+# NOVA family: additional chat assistants backed by other free-tier models,
+# accessed via OpenAI-compatible chat completions endpoints.
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
