@@ -1,4 +1,4 @@
-"""NOVA Health: photo-based food/calorie tracking.
+"""NOVA Nutrition: photo-based food/calorie tracking.
 
 The user uploads a photo of a meal; Gemini's vision input identifies the food
 (with extra care for Indian dishes that are easy to confuse — dal vs sambar,
@@ -66,7 +66,7 @@ LOG_MEAL_TOOL = types.Tool(function_declarations=[
 ])
 
 SYSTEM_PROMPT = (
-    "You are NOVA Health, a food and calorie analysis assistant. The user usually "
+    "You are NOVA Nutrition, a food and calorie analysis assistant. The user usually "
     "uploads a photo of a meal, but may instead (or additionally) describe it in "
     "plain text — either way, your job is to identify exactly what food is being "
     "discussed, then estimate its calories, notable nutrients, and deficiencies.\n\n"

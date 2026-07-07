@@ -1475,8 +1475,8 @@ function switchView(view) {
   }
 
   if (view === "health") {
-    brandLabel.textContent = "NOVA Health";
-    workspaceLabel.textContent = "NOVA Health";
+    brandLabel.textContent = "NOVA Nutrition";
+    workspaceLabel.textContent = "NOVA Nutrition";
     workspaceSub.textContent = "Photo-based calorie & nutrient tracking";
     topbarTip.textContent = "Tip: Upload a photo of your meal to get started";
     nebulaView.hidden = true;

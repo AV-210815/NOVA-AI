@@ -1,4 +1,4 @@
-"""SQLite persistence for accounts, chat history, and NOVA Health logs.
+"""SQLite persistence for accounts, chat history, and NOVA Nutrition logs.
 
 Replaces browser localStorage (chats) and the single-file health_log.json —
 both are now scoped per signed-in user. Uses the standard library's sqlite3,
@@ -161,7 +161,7 @@ def delete_chat(user_id: int, chat_id: str) -> None:
         conn.execute("DELETE FROM chats WHERE user_id = ? AND id = ?", (user_id, chat_id))
 
 
-# --- NOVA Health entries ---
+# --- NOVA Nutrition entries ---
 
 def load_health_entries(user_id: int) -> list[dict]:
     with get_db() as conn:
