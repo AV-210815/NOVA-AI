@@ -438,6 +438,7 @@ function showEmptyState() {
     setGreeting();
     messagesScrollEl.appendChild(emptyState);
   }
+  if (currentView === "chat") showTimeOfDayAmbient();
 }
 
 function ensureMessageList() {
@@ -447,6 +448,7 @@ function ensureMessageList() {
     messageList = document.createElement("div");
     messageList.className = "message-list";
     messagesScrollEl.appendChild(messageList);
+    if (currentView === "chat") resumeAssistantAmbient();
   }
   return messageList;
 }
@@ -1502,10 +1504,28 @@ function resizeAmbientCanvas() {
   ambientCanvas.height = messagesEl.clientHeight;
 }
 
-function initAmbientScene(assistantId) {
+// Time-of-day landing ambiance: shown only on the empty/idle chat state,
+// independent of which assistant is selected — the moment a message is
+// sent, this hands back off to that assistant's own ambient theme.
+const TIME_OF_DAY_THEMES = {
+  dawn: { kind: "sun", tint: "#fb923c", sun: "#fed7aa", sunY: 0.72 },
+  day: { kind: "sun", tint: "#60a5fa", sun: "#fde68a", sunY: 0.3 },
+  dusk: { kind: "sun", tint: "#f97316", sun: "#fca5a5", sunY: 0.72 },
+  night: { kind: "stars", tint: "#312e81", shootingStars: false },
+};
+
+function getTimeOfDayPeriod() {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 7) return "dawn";
+  if (hour >= 7 && hour < 18) return "day";
+  if (hour >= 18 && hour < 20) return "dusk";
+  return "night";
+}
+
+function initAmbientScene(themeSource) {
   resizeAmbientCanvas();
-  const theme = AMBIENT_THEMES[assistantId];
-  ambientTheme = { ...theme, assistantId };
+  const theme = typeof themeSource === "string" ? AMBIENT_THEMES[themeSource] : themeSource;
+  ambientTheme = { ...theme };
   const w = ambientCanvas.width, h = ambientCanvas.height;
 
   ambientClouds = [];
@@ -1554,7 +1574,26 @@ function drawAmbientFrame(t) {
   ambientCtx.clearRect(0, 0, w, h);
   if (!theme || w === 0 || h === 0) return;
 
-  if (theme.kind === "clouds") {
+  if (theme.tint) {
+    const [tr, tg, tb] = hexToRgb(theme.tint);
+    ambientCtx.fillStyle = `rgba(${tr}, ${tg}, ${tb}, 0.07)`;
+    ambientCtx.fillRect(0, 0, w, h);
+  }
+
+  if (theme.kind === "sun") {
+    const sunX = w * 0.5, sunY = h * theme.sunY;
+    const pulse = 0.9 + 0.1 * Math.sin(t * 0.0006);
+    const [sr, sg, sb] = hexToRgb(theme.sun);
+    const radius = Math.min(w, h) * 0.32 * pulse;
+    const grad = ambientCtx.createRadialGradient(sunX, sunY, 0, sunX, sunY, radius);
+    grad.addColorStop(0, `rgba(${sr}, ${sg}, ${sb}, 0.55)`);
+    grad.addColorStop(0.4, `rgba(${sr}, ${sg}, ${sb}, 0.18)`);
+    grad.addColorStop(1, `rgba(${sr}, ${sg}, ${sb}, 0)`);
+    ambientCtx.fillStyle = grad;
+    ambientCtx.beginPath();
+    ambientCtx.arc(sunX, sunY, radius, 0, Math.PI * 2);
+    ambientCtx.fill();
+  } else if (theme.kind === "clouds") {
     for (const c of ambientClouds) {
       c.x += c.vx;
       c.y += c.vy;
@@ -1613,7 +1652,7 @@ function drawAmbientFrame(t) {
       ambientCtx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
       ambientCtx.fill();
     }
-    if (Math.random() < 0.01) spawnAmbientShootingStar();
+    if (theme.shootingStars !== false && Math.random() < 0.01) spawnAmbientShootingStar();
     ambientShootingStars = ambientShootingStars.filter(s => s.life > 0);
     for (const s of ambientShootingStars) {
       const tailX = s.x - s.vx * 6, tailY = s.y - s.vy * 6;
@@ -1643,6 +1682,38 @@ function ambientLoop(t) {
 function startAmbientBackground(assistantId) {
   initAmbientScene(assistantId);
   if (!ambientRAF) ambientRAF = requestAnimationFrame(ambientLoop);
+}
+
+const TIME_ICON_COLORS = {
+  dawn: ["#fed7aa", "#fb923c"],
+  day: ["#fff9c4", "#facc15"],
+  dusk: ["#fca5a5", "#f97316"],
+  night: ["#ffffff", "#d8dae6"],
+};
+
+function updateTimeIcon(period) {
+  const mainCircle = moonIcon.querySelector("circle[cx='21']");
+  const [from, to] = TIME_ICON_COLORS[period];
+  const stops = document.getElementById("moon-gradient").querySelectorAll("stop");
+  stops[0].setAttribute("stop-color", from);
+  stops[1].setAttribute("stop-color", to);
+  if (period === "night") {
+    mainCircle.setAttribute("mask", "url(#moon-mask)");
+  } else {
+    mainCircle.removeAttribute("mask");
+  }
+}
+
+function showTimeOfDayAmbient() {
+  const period = getTimeOfDayPeriod();
+  initAmbientScene(TIME_OF_DAY_THEMES[period]);
+  if (!ambientRAF) ambientRAF = requestAnimationFrame(ambientLoop);
+  updateTimeIcon(period);
+}
+
+function resumeAssistantAmbient() {
+  startAmbientBackground(currentAssistant);
+  updateTimeIcon("night");
 }
 
 function stopAmbientBackground() {
