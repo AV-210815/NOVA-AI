@@ -11,9 +11,11 @@ from datetime import datetime
 from zoneinfo import ZoneInfo, available_timezones
 
 from openai import OpenAI
+from openai import RateLimitError as OpenAIRateLimitError
 
 from google import genai
 from google.genai import types
+from google.genai.errors import ClientError as GeminiClientError
 
 import chat as chat_module
 import config
@@ -353,9 +355,20 @@ def chat_stream(assistant_id: str, user_message: str, history: list[dict]):
         token_stream = _stream_openai_compatible(_openrouter_client, assistant["model"], system_prompt, user_message, history, hide_reasoning)
 
     full_reply = ""
-    for token in token_stream:
-        full_reply += token
-        yield {"token": token}
+    try:
+        for token in token_stream:
+            full_reply += token
+            yield {"token": token}
+    except OpenAIRateLimitError:
+        yield {"token": f"{assistant['name']} is temporarily rate-limited by its provider — try again in a few minutes."}
+        yield {"done": True, "sources": [], "web_sources": []}
+        return
+    except GeminiClientError as e:
+        if getattr(e, "code", None) == 429 or "RESOURCE_EXHAUSTED" in str(e):
+            yield {"token": f"{assistant['name']} is temporarily rate-limited by its provider — try again in a few minutes."}
+            yield {"done": True, "sources": [], "web_sources": []}
+            return
+        raise
 
     if not full_reply:
         yield {"token": "I wasn't able to come up with an answer for that."}
