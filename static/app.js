@@ -753,6 +753,7 @@ async function sendHealthMessage() {
           fullText += chunk.token;
           bubble.innerHTML = renderMarkdown(fullText);
           healthMessagesScrollEl.scrollTop = healthMessagesScrollEl.scrollHeight;
+          if (fullText.length > FOCUS_MODE_LENGTH_THRESHOLD) enterFocusMode();
         } else if (chunk.done) {
           logged = chunk.logged;
         }
@@ -770,6 +771,7 @@ async function sendHealthMessage() {
   } catch (err) {
     bubble.textContent = "Something went wrong reaching the server.";
   } finally {
+    exitFocusMode();
     healthInput.focus();
   }
 }
@@ -1366,6 +1368,7 @@ async function sendMessage() {
           fullText += chunk.token;
           bubble.innerHTML = renderMarkdown(fullText);
           messagesScrollEl.scrollTop = messagesScrollEl.scrollHeight;
+          if (fullText.length > FOCUS_MODE_LENGTH_THRESHOLD) enterFocusMode();
         } else if (chunk.done) {
           sources = chunk.sources || [];
           webSources = chunk.web_sources || [];
@@ -1385,8 +1388,27 @@ async function sendMessage() {
     pending.remove();
     addMessage("assistant", "Something went wrong reaching the server.");
   } finally {
+    exitFocusMode();
     input.focus();
   }
+}
+
+// Focus Mode: once a streaming reply grows past a "this is a long answer"
+// length, dim everything but the answer itself — sidebar/topbar/composer
+// fade back, the composer shrinks. Reverts the moment the reply finishes
+// (or errors out), regardless of whether focus mode ever actually triggered.
+const FOCUS_MODE_LENGTH_THRESHOLD = 260;
+let focusModeActive = false;
+
+function enterFocusMode() {
+  if (focusModeActive) return;
+  focusModeActive = true;
+  appEl.classList.add("focus-mode");
+}
+
+function exitFocusMode() {
+  focusModeActive = false;
+  appEl.classList.remove("focus-mode");
 }
 
 input.addEventListener("input", () => {

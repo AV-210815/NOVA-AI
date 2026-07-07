@@ -1200,3 +1200,34 @@ main {
   background: rgba(var(--overlay-rgb), 0.06);
   color: var(--text-primary);
 }
+
+/* Focus Mode: while a long reply streams in, fade everything but the answer */
+
+#sidebar,
+#topbar,
+#composer-wrap,
+#health-composer-wrap {
+  transition: opacity 0.45s ease, transform 0.45s ease;
+}
+
+#ambient-canvas {
+  transition: opacity 0.45s ease;
+}
+
+#app.focus-mode #sidebar {
+  opacity: 0.32;
+}
+
+#app.focus-mode #topbar {
+  opacity: 0.5;
+}
+
+#app.focus-mode #ambient-canvas {
+  opacity: 0.35;
+}
+
+#app.focus-mode #composer-wrap,
+#app.focus-mode #health-composer-wrap {
+  opacity: 0.6;
+  transform: scale(0.94);
+}
