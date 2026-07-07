@@ -116,6 +116,7 @@ textarea::placeholder { color: #55566a; }
   font-family: 'Bodoni Moda', serif;
   font-size: 10px;
   color: #8b8ca0;
+  white-space: nowrap;
 }
 
 .brand .logo {
