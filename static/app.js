@@ -39,6 +39,13 @@ const accountName = document.getElementById("account-name");
 const accountEmail = document.getElementById("account-email");
 const accountSignoutBtn = document.getElementById("account-signout-btn");
 
+const settingsBtn = document.getElementById("settings-btn");
+const settingsOverlay = document.getElementById("settings-overlay");
+const settingsCloseBtn = document.getElementById("settings-close-btn");
+const themeToggle = document.getElementById("theme-toggle");
+const bgColorPicker = document.getElementById("bg-color-picker");
+const bgColorResetBtn = document.getElementById("bg-color-reset-btn");
+
 const SUGGESTIONS = [
   "Summarize this week's notes",
   "What have I been doing to improve my health?",
@@ -1602,4 +1609,71 @@ async function init() {
   renderChatList();
 }
 
+const THEME_KEY = "nova.theme";
+const BG_COLOR_KEY = "nova.bgColor";
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  for (const btn of themeToggle.querySelectorAll(".theme-option")) {
+    btn.classList.toggle("active", btn.dataset.themeValue === theme);
+  }
+}
+
+function applyBgColor(color) {
+  if (color) {
+    document.documentElement.style.setProperty("--bg-page", color);
+    bgColorPicker.value = color;
+  } else {
+    document.documentElement.style.removeProperty("--bg-page");
+    bgColorPicker.value = "#000000";
+  }
+}
+
+function loadUiSettings() {
+  applyTheme(localStorage.getItem(THEME_KEY) || "dark");
+  const savedBgColor = localStorage.getItem(BG_COLOR_KEY);
+  if (savedBgColor) applyBgColor(savedBgColor);
+}
+
+for (const btn of themeToggle.querySelectorAll(".theme-option")) {
+  btn.addEventListener("click", () => {
+    applyTheme(btn.dataset.themeValue);
+    localStorage.setItem(THEME_KEY, btn.dataset.themeValue);
+  });
+}
+
+bgColorPicker.addEventListener("input", () => {
+  applyBgColor(bgColorPicker.value);
+  localStorage.setItem(BG_COLOR_KEY, bgColorPicker.value);
+});
+
+bgColorResetBtn.addEventListener("click", () => {
+  applyBgColor(null);
+  localStorage.removeItem(BG_COLOR_KEY);
+});
+
+for (const tabBtn of document.querySelectorAll(".settings-tab-btn")) {
+  tabBtn.addEventListener("click", () => {
+    for (const btn of document.querySelectorAll(".settings-tab-btn")) {
+      btn.classList.toggle("active", btn === tabBtn);
+    }
+    for (const panel of document.querySelectorAll(".settings-panel")) {
+      panel.classList.toggle("active", panel.dataset.panel === tabBtn.dataset.tab);
+    }
+  });
+}
+
+settingsBtn.addEventListener("click", () => {
+  settingsOverlay.hidden = false;
+});
+
+settingsCloseBtn.addEventListener("click", () => {
+  settingsOverlay.hidden = true;
+});
+
+settingsOverlay.addEventListener("click", (e) => {
+  if (e.target === settingsOverlay) settingsOverlay.hidden = true;
+});
+
+loadUiSettings();
 init();

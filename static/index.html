@@ -77,6 +77,9 @@
           <div id="account-name"></div>
           <div id="account-email"></div>
         </div>
+        <button type="button" id="settings-btn" aria-label="Settings">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
         <button type="button" id="account-signout-btn" aria-label="Sign out">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         </button>
@@ -170,6 +173,47 @@
       </div>
     </main>
   </div>
+
+  <div id="settings-overlay" hidden>
+    <div id="settings-modal">
+      <div id="settings-header">
+        <div id="settings-title">Settings</div>
+        <button type="button" id="settings-close-btn" aria-label="Close settings">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div id="settings-body">
+        <div id="settings-tabs">
+          <button type="button" class="settings-tab-btn active" data-tab="ui">User Interface</button>
+        </div>
+        <div id="settings-panels">
+          <div class="settings-panel active" data-panel="ui">
+            <div class="settings-row">
+              <div class="settings-row-label">
+                <div class="settings-row-title">Theme</div>
+                <div class="settings-row-sub">Switch between light and dark mode.</div>
+              </div>
+              <div id="theme-toggle" class="settings-toggle-group">
+                <button type="button" class="theme-option" data-theme-value="dark">Dark</button>
+                <button type="button" class="theme-option" data-theme-value="light">Light</button>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-label">
+                <div class="settings-row-title">Background color</div>
+                <div class="settings-row-sub">Override the app's background with a custom color.</div>
+              </div>
+              <div class="settings-row-control">
+                <input type="color" id="bg-color-picker" value="#000000">
+                <button type="button" id="bg-color-reset-btn">Reset</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>
