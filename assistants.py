@@ -7,6 +7,7 @@ is backed by its own provider. NOVA Nebula is the only one with retrieval-augmen
 generation over the user's notes — the others are plain conversational chat.
 """
 import json
+import re
 from datetime import datetime
 from zoneinfo import ZoneInfo, available_timezones
 
@@ -325,6 +326,37 @@ def _stream_openai_compatible(client: OpenAI, model: str, system_prompt: str, us
             yield delta
 
 
+def _format_rate_limit_message(assistant_name: str, error: Exception) -> str:
+    """Pulls the usage/limit and retry-after figures out of the provider's own
+    error text (Groq/OpenRouter: "Limit 100000, Used 98689 ... try again in
+    7m45.696s"; Gemini: "... Please retry in 16.128441235s") so the user gets
+    real numbers instead of a vague "try again later".
+    """
+    text = str(error)
+
+    usage_str = ""
+    used_match = re.search(r"Used (\d+)", text)
+    limit_match = re.search(r"Limit (\d+)", text)
+    if used_match and limit_match:
+        usage_str = f" ({int(used_match.group(1)):,} / {int(limit_match.group(1)):,} tokens used today)"
+
+    retry_str = "in a few minutes"
+    retry_match = re.search(r"(?:try again|retry) in (?:(\d+)m)?([\d.]+)s", text)
+    if retry_match:
+        minutes = int(retry_match.group(1)) if retry_match.group(1) else 0
+        seconds = round(float(retry_match.group(2)))
+        minutes += seconds // 60
+        seconds %= 60
+        if minutes and seconds:
+            retry_str = f"in about {minutes}m {seconds}s"
+        elif minutes:
+            retry_str = f"in about {minutes}m"
+        else:
+            retry_str = f"in about {seconds}s"
+
+    return f"{assistant_name} hit its provider's rate limit{usage_str} — you can ask again {retry_str}."
+
+
 def chat_stream(assistant_id: str, user_message: str, history: list[dict]):
     """Yields {"token": str} chunks as they arrive, then a final
     {"done": True, "sources": [...], "web_sources": [...]}.
@@ -359,13 +391,13 @@ def chat_stream(assistant_id: str, user_message: str, history: list[dict]):
         for token in token_stream:
             full_reply += token
             yield {"token": token}
-    except OpenAIRateLimitError:
-        yield {"token": f"{assistant['name']} is temporarily rate-limited by its provider — try again in a few minutes."}
+    except OpenAIRateLimitError as e:
+        yield {"token": _format_rate_limit_message(assistant["name"], e)}
         yield {"done": True, "sources": [], "web_sources": []}
         return
     except GeminiClientError as e:
         if getattr(e, "code", None) == 429 or "RESOURCE_EXHAUSTED" in str(e):
-            yield {"token": f"{assistant['name']} is temporarily rate-limited by its provider — try again in a few minutes."}
+            yield {"token": _format_rate_limit_message(assistant["name"], e)}
             yield {"done": True, "sources": [], "web_sources": []}
             return
         raise
