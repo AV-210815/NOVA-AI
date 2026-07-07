@@ -1471,11 +1471,11 @@ newChatBtn.addEventListener("click", () => {
 });
 
 const ASSISTANT_META = {
-  nebula: { label: "✨ NOVA-Nebula", sub: "RAG over your notes · Gemini 2.5 Flash", tip: "Tip: Try typing /nova and then /supernova in the chat!" },
-  sirius: { label: "⭐ NOVA-Sirius", sub: "Groq · Llama 3.3 70B (free)", tip: "Tip: Ask me anything — powered by Llama 3.3 70B via Groq." },
-  sol: { label: "🌞 NOVA-Sol", sub: "Gemini 2.5 Flash", tip: "Tip: A general-purpose assistant, no notes retrieval here." },
-  supernova: { label: "💥 NOVA-Supernova", sub: "GPT-OSS 120B via OpenRouter (free)", tip: "Tip: A large reasoning-focused model, free via OpenRouter." },
-  m618: { label: "🕳️ NOVA-618", sub: "Qwen 3 32B via Groq (free)", tip: "Tip: Fast responses, powered by Qwen 3 32B via Groq." },
+  nebula: { label: "NOVA Nebula", sub: "Fast responses for everyday conversations.", tip: "Tip: Try typing /nova and then /supernova in the chat!" },
+  sirius: { label: "NOVA Sirius", sub: "Our most capable model for your toughest tasks.", tip: "Tip: Ask me anything — powered by Llama 3.3 70B via Groq." },
+  sol: { label: "NOVA Sol", sub: "Balanced intelligence for research and creative work.", tip: "Tip: A general-purpose assistant, no notes retrieval here." },
+  supernova: { label: "NOVA Supernova", sub: "Advanced reasoning for complex projects.", tip: "Tip: A large reasoning-focused model, free via OpenRouter." },
+  m618: { label: "NOVA-618", sub: "Frontier intelligence for breakthrough discoveries.", tip: "Tip: Fast responses, powered by Qwen 3 32B via Groq." },
 };
 
 async function switchView(view, assistantId) {

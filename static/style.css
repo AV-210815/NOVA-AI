@@ -93,6 +93,7 @@ textarea::placeholder { color: var(--text-muted); }
   top: calc(100% - 14px);
   left: 8px;
   min-width: 220px;
+  max-width: 280px;
   background: var(--surface-1);
   border: 1px solid rgba(var(--overlay-rgb), 0.1);
   border-radius: 12px;
@@ -140,7 +141,7 @@ textarea::placeholder { color: var(--text-muted); }
   font-family: 'Bodoni Moda', serif;
   font-size: 10px;
   color: var(--text-secondary);
-  white-space: nowrap;
+  line-height: 1.4;
 }
 
 .brand .logo {
