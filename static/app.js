@@ -14,6 +14,8 @@ const brandDropdown = document.getElementById("brand-dropdown");
 const starfieldCanvas = document.getElementById("starfield-canvas");
 const starCtx = starfieldCanvas.getContext("2d");
 const moonIcon = document.getElementById("moon-icon");
+const ambientCanvas = document.getElementById("ambient-canvas");
+const ambientCtx = ambientCanvas.getContext("2d");
 
 const nebulaView = document.getElementById("nebula-view");
 const healthView = document.getElementById("health-view");
@@ -1470,6 +1472,191 @@ newChatBtn.addEventListener("click", () => {
   renderChatList();
 });
 
+// Ambient per-assistant background: a continuous, lightweight canvas scene
+// behind the chat that gives each NOVA family member its own visual identity
+// at a glance. Separate from #starfield-canvas/#planet-scene, which are the
+// one-shot /nova and /supernova slash-command explosion effect — this one
+// runs constantly (while in a chat view) and just changes appearance when
+// the active assistant changes.
+const AMBIENT_THEMES = {
+  nebula: { kind: "clouds", colors: ["#a78bfa", "#7c5cf0", "#c4b5fd"], count: 5 },
+  sol: { kind: "glow", colors: ["#facc15", "#fb923c"] },
+  supernova: { kind: "clouds", colors: ["#f472b6", "#818cf8", "#34d399", "#fb923c", "#facc15"], count: 8 },
+  m618: { kind: "blackhole", color: "#a78bfa" },
+  sirius: { kind: "stars", color: "#dceaff" },
+};
+
+let ambientRAF = null;
+let ambientTheme = null;
+let ambientClouds = [];
+let ambientStars = [];
+let ambientShootingStars = [];
+
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function resizeAmbientCanvas() {
+  ambientCanvas.width = messagesEl.clientWidth;
+  ambientCanvas.height = messagesEl.clientHeight;
+}
+
+function initAmbientScene(assistantId) {
+  resizeAmbientCanvas();
+  const theme = AMBIENT_THEMES[assistantId];
+  ambientTheme = { ...theme, assistantId };
+  const w = ambientCanvas.width, h = ambientCanvas.height;
+
+  ambientClouds = [];
+  ambientStars = [];
+  ambientShootingStars = [];
+
+  if (theme.kind === "clouds") {
+    for (let i = 0; i < theme.count; i++) {
+      ambientClouds.push({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        r: 110 + Math.random() * 150,
+        rgb: hexToRgb(theme.colors[i % theme.colors.length]),
+        vx: (Math.random() - 0.5) * 0.12,
+        vy: (Math.random() - 0.5) * 0.12,
+        phase: Math.random() * Math.PI * 2,
+      });
+    }
+  } else if (theme.kind === "stars") {
+    for (let i = 0; i < 110; i++) {
+      ambientStars.push({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        r: 0.6 + Math.random() * 1.5,
+        speed: 0.5 + Math.random() * 1.8,
+        phase: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+}
+
+function spawnAmbientShootingStar() {
+  const w = ambientCanvas.width, h = ambientCanvas.height;
+  ambientShootingStars.push({
+    x: Math.random() * w * 0.6,
+    y: -10,
+    vx: 5 + Math.random() * 4,
+    vy: 3 + Math.random() * 2.5,
+    life: 1,
+  });
+}
+
+function drawAmbientFrame(t) {
+  const theme = ambientTheme;
+  const w = ambientCanvas.width, h = ambientCanvas.height;
+  ambientCtx.clearRect(0, 0, w, h);
+  if (!theme || w === 0 || h === 0) return;
+
+  if (theme.kind === "clouds") {
+    for (const c of ambientClouds) {
+      c.x += c.vx;
+      c.y += c.vy;
+      if (c.x < -c.r) c.x = w + c.r; else if (c.x > w + c.r) c.x = -c.r;
+      if (c.y < -c.r) c.y = h + c.r; else if (c.y > h + c.r) c.y = -c.r;
+      const pulse = 0.8 + 0.2 * Math.sin(t * 0.0003 + c.phase);
+      const radius = c.r * pulse;
+      const [r, g, b] = c.rgb;
+      const grad = ambientCtx.createRadialGradient(c.x, c.y, 0, c.x, c.y, radius);
+      grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.14)`);
+      grad.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+      ambientCtx.fillStyle = grad;
+      ambientCtx.beginPath();
+      ambientCtx.arc(c.x, c.y, radius, 0, Math.PI * 2);
+      ambientCtx.fill();
+    }
+  } else if (theme.kind === "glow") {
+    const pulse = 0.85 + 0.15 * Math.sin(t * 0.0006);
+    const [r1, g1, b1] = hexToRgb(theme.colors[0]);
+    const [r2, g2, b2] = hexToRgb(theme.colors[1]);
+    const grad = ambientCtx.createRadialGradient(w * 0.5, h * 0.32, 0, w * 0.5, h * 0.32, Math.max(w, h) * 0.75 * pulse);
+    grad.addColorStop(0, `rgba(${r1}, ${g1}, ${b1}, 0.16)`);
+    grad.addColorStop(0.55, `rgba(${r2}, ${g2}, ${b2}, 0.07)`);
+    grad.addColorStop(1, `rgba(${r2}, ${g2}, ${b2}, 0)`);
+    ambientCtx.fillStyle = grad;
+    ambientCtx.fillRect(0, 0, w, h);
+  } else if (theme.kind === "blackhole") {
+    const cx = w / 2, cy = h * 0.42;
+    const [r, g, b] = hexToRgb(theme.color);
+    ambientCtx.save();
+    ambientCtx.translate(cx, cy);
+    for (let i = 1; i <= 4; i++) {
+      const radius = i * Math.min(w, h) * 0.085 + 46;
+      ambientCtx.save();
+      ambientCtx.rotate(t * 0.00006 * i + i);
+      ambientCtx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${0.16 - i * 0.03})`;
+      ambientCtx.lineWidth = 1;
+      ambientCtx.beginPath();
+      ambientCtx.ellipse(0, 0, radius, radius * 0.32, 0, 0, Math.PI * 2);
+      ambientCtx.stroke();
+      ambientCtx.restore();
+    }
+    const core = ambientCtx.createRadialGradient(0, 0, 0, 0, 0, 54);
+    core.addColorStop(0, "rgba(0, 0, 0, 0.95)");
+    core.addColorStop(1, "rgba(0, 0, 0, 0)");
+    ambientCtx.fillStyle = core;
+    ambientCtx.beginPath();
+    ambientCtx.arc(0, 0, 54, 0, Math.PI * 2);
+    ambientCtx.fill();
+    ambientCtx.restore();
+  } else if (theme.kind === "stars") {
+    for (const s of ambientStars) {
+      const twinkle = 0.35 + 0.65 * Math.abs(Math.sin(t * 0.0012 * s.speed + s.phase));
+      ambientCtx.fillStyle = `rgba(220, 234, 255, ${twinkle})`;
+      ambientCtx.beginPath();
+      ambientCtx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ambientCtx.fill();
+    }
+    if (Math.random() < 0.01) spawnAmbientShootingStar();
+    ambientShootingStars = ambientShootingStars.filter(s => s.life > 0);
+    for (const s of ambientShootingStars) {
+      const tailX = s.x - s.vx * 6, tailY = s.y - s.vy * 6;
+      const trail = ambientCtx.createLinearGradient(tailX, tailY, s.x, s.y);
+      trail.addColorStop(0, "rgba(220, 234, 255, 0)");
+      trail.addColorStop(1, `rgba(220, 234, 255, ${s.life})`);
+      ambientCtx.strokeStyle = trail;
+      ambientCtx.lineWidth = 1.6;
+      ambientCtx.lineCap = "round";
+      ambientCtx.beginPath();
+      ambientCtx.moveTo(tailX, tailY);
+      ambientCtx.lineTo(s.x, s.y);
+      ambientCtx.stroke();
+      s.x += s.vx;
+      s.y += s.vy;
+      s.life -= 0.012;
+      if (s.x > w + 20 || s.y > h + 20) s.life = 0;
+    }
+  }
+}
+
+function ambientLoop(t) {
+  drawAmbientFrame(t);
+  ambientRAF = requestAnimationFrame(ambientLoop);
+}
+
+function startAmbientBackground(assistantId) {
+  initAmbientScene(assistantId);
+  if (!ambientRAF) ambientRAF = requestAnimationFrame(ambientLoop);
+}
+
+function stopAmbientBackground() {
+  if (ambientRAF) {
+    cancelAnimationFrame(ambientRAF);
+    ambientRAF = null;
+  }
+  ambientCtx.clearRect(0, 0, ambientCanvas.width, ambientCanvas.height);
+}
+
+window.addEventListener("resize", () => {
+  if (ambientRAF) resizeAmbientCanvas();
+});
+
 const ASSISTANT_META = {
   nebula: { label: "NOVA Nebula", sub: "Fast responses for everyday conversations.", tip: "Tip: Try typing /nova and then /supernova in the chat!" },
   sirius: { label: "NOVA Sirius", sub: "Our most capable model for your toughest tasks.", tip: "Tip: Ask me anything — powered by Llama 3.3 70B via Groq." },
@@ -1494,6 +1681,7 @@ async function switchView(view, assistantId) {
   }
 
   if (view === "health") {
+    stopAmbientBackground();
     brandLabel.textContent = "NOVA Nutrition";
     workspaceLabel.textContent = "NOVA Nutrition";
     workspaceSub.textContent = "Photo-based calorie & nutrient tracking";
@@ -1516,6 +1704,10 @@ async function switchView(view, assistantId) {
   healthView.hidden = true;
   chatListEl.hidden = false;
   healthSidebar.hidden = true;
+
+  if (assistantChanged || !ambientRAF) {
+    startAmbientBackground(currentAssistant);
+  }
 
   if (assistantChanged) {
     history = [];
@@ -1607,6 +1799,7 @@ async function init() {
   await loadChats();
   showEmptyState();
   renderChatList();
+  startAmbientBackground(currentAssistant);
 }
 
 const THEME_KEY = "nova.theme";
