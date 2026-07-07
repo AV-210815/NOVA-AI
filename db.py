@@ -91,6 +91,16 @@ def upsert_user(google_sub: str, email: str, name: str, picture: str) -> sqlite3
         return conn.execute("SELECT * FROM users WHERE google_sub = ?", (google_sub,)).fetchone()
 
 
+GUEST_GOOGLE_SUB = "__guest__"
+
+
+def get_or_create_guest_user() -> sqlite3.Row:
+    """The single shared account used when sign-in is skipped (deployed Render
+    instance) — every visitor there sees/shares the same guest chats and logs.
+    """
+    return upsert_user(google_sub=GUEST_GOOGLE_SUB, email="guest@nova.local", name="Guest", picture="")
+
+
 def create_session(user_id: int) -> str:
     token = uuid.uuid4().hex
     with get_db() as conn:

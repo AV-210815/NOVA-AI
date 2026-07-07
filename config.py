@@ -73,3 +73,8 @@ GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
 # accessed via OpenAI-compatible chat completions endpoints.
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+
+# Google Sign-In is required locally, but skipped on the deployed Render
+# instance (RENDER is a var Render sets automatically) — every visitor there
+# shares one built-in guest account instead of signing in.
+AUTH_REQUIRED = not bool(os.environ.get("RENDER"))

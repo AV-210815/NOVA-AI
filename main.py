@@ -21,6 +21,8 @@ app = FastAPI(title="NOVA semantic search")
 
 
 def require_user(nova_session: str | None = Cookie(default=None)) -> dict:
+    if not config.AUTH_REQUIRED:
+        return dict(db.get_or_create_guest_user())
     user = auth.get_current_user(nova_session)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -89,6 +91,8 @@ def auth_logout(response: Response, nova_session: str | None = Cookie(default=No
 
 @app.get("/api/auth/me")
 def auth_me(nova_session: str | None = Cookie(default=None)):
+    if not config.AUTH_REQUIRED:
+        return {"user": _public_user(dict(db.get_or_create_guest_user()))}
     user = auth.get_current_user(nova_session)
     return {"user": _public_user(user) if user else None}
 
