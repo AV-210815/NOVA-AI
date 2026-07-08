@@ -12,7 +12,7 @@ from google.genai import types
 
 import config
 
-client = genai.Client(api_key=config.GEMINI_API_KEY)
+client = genai.Client(api_key=config.GEMINI_API_KEY or "not-configured")
 
 
 def embed_texts(texts: list[str], task_type: str) -> list[list[float]]:

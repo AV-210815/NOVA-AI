@@ -14,7 +14,7 @@ from google.genai import types
 import config
 import db
 
-client = genai.Client(api_key=config.GEMINI_API_KEY)
+client = genai.Client(api_key=config.GEMINI_API_KEY or "not-configured")
 
 MAX_OUTPUT_TOKENS = 4096
 

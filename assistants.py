@@ -21,9 +21,14 @@ from google.genai.errors import ClientError as GeminiClientError
 import chat as chat_module
 import config
 
-_gemini_client = genai.Client(api_key=config.GEMINI_API_KEY)
-_groq_client = OpenAI(api_key=config.GROQ_API_KEY, base_url="https://api.groq.com/openai/v1")
-_openrouter_client = OpenAI(api_key=config.OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1")
+_gemini_client = genai.Client(api_key=config.GEMINI_API_KEY or "not-configured")
+# The OpenAI SDK's client constructor raises immediately if api_key is empty —
+# fall back to a placeholder so a missing Groq/OpenRouter key can't crash the
+# entire app at import time (main.py imports this module at startup). With a
+# placeholder, only requests to that specific provider fail, with a normal
+# auth error — not the whole server failing to boot.
+_groq_client = OpenAI(api_key=config.GROQ_API_KEY or "not-configured", base_url="https://api.groq.com/openai/v1")
+_openrouter_client = OpenAI(api_key=config.OPENROUTER_API_KEY or "not-configured", base_url="https://openrouter.ai/api/v1")
 
 # Built-in world clock — not a feature the user is told about explicitly; the
 # model just quietly calls this whenever it needs the actual current time or
