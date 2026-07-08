@@ -96,6 +96,11 @@ MAX_OUTPUT_TOKENS = 8192
 # rather than tuning a separate number per model.
 OPENAI_COMPATIBLE_MAX_OUTPUT_TOKENS = 3000
 
+# Reflection Mode: the model appends this marker (and nothing else after it)
+# when a follow-up prompt is genuinely worth offering. Stripped from the
+# visible text server-side — it's a signal, never something the user sees.
+REFLECT_MARKER = "[[REFLECT]]"
+
 BASE_PERSONALITY = (
     "\n\nYou do not have web search — answer entirely from your own knowledge. For "
     "anything time-sensitive (current events, who currently holds a role, recent "
@@ -145,7 +150,17 @@ BASE_PERSONALITY = (
     "at random — briefly name the major/most notable things it could refer to, then say "
     "more about whichever seems most likely given the conversation. Only pick a single "
     "meaning without mentioning alternatives if the term genuinely has just one common "
-    "referent."
+    "referent.\n\n"
+    f"Reflection prompts: after giving a substantive explanation or teaching something — "
+    f"walking through how something works, a concept, a historical topic, a how-to, code, "
+    f"math, etc — you may end your reply with the exact marker {REFLECT_MARKER} on its own, "
+    f"with absolutely nothing after it, to offer the user a follow-up (simpler explanation, "
+    f"examples, a quiz, or going deeper). Use this genuinely sparingly and only when a "
+    f"follow-up would clearly help — never after quick facts, short factual answers, "
+    f"greetings, small talk, a roast, or when the user explicitly asked for something brief. "
+    f"Most replies should NOT end with it. Never mention or describe this marker or the "
+    f"follow-up options yourself in words — the marker alone triggers the UI, so just append "
+    f"it silently or omit it entirely."
 )
 
 
@@ -393,10 +408,18 @@ def chat_stream(assistant_id: str, user_message: str, history: list[dict]):
         token_stream = _stream_openai_compatible(_openrouter_client, assistant["model"], system_prompt, user_message, history, hide_reasoning)
 
     full_reply = ""
+    pending = ""
     try:
         for token in token_stream:
-            full_reply += token
-            yield {"token": token}
+            pending += token
+            # Hold back enough trailing text that a partial REFLECT_MARKER
+            # can't leak through mid-stream — only flush what's definitely
+            # not the start of it.
+            safe_len = len(pending) - len(REFLECT_MARKER)
+            if safe_len > 0:
+                emit, pending = pending[:safe_len], pending[safe_len:]
+                full_reply += emit
+                yield {"token": emit}
     except OpenAIRateLimitError as e:
         yield {"token": _format_rate_limit_message(assistant["name"], e)}
         yield {"done": True, "sources": [], "web_sources": []}
@@ -420,9 +443,15 @@ def chat_stream(assistant_id: str, user_message: str, history: list[dict]):
         yield {"done": True, "sources": [], "web_sources": []}
         return
 
+    show_reflection = REFLECT_MARKER in pending
+    remainder = pending.replace(REFLECT_MARKER, "").rstrip()
+    if remainder:
+        full_reply += remainder
+        yield {"token": remainder}
+
     if not full_reply:
         yield {"token": "I wasn't able to come up with an answer for that."}
 
     candidate_sources = {c["source"] for c in context_chunks}
     note_sources = sorted(s for s in candidate_sources if s in full_reply)
-    yield {"done": True, "sources": note_sources, "web_sources": []}
+    yield {"done": True, "sources": note_sources, "web_sources": [], "show_reflection": show_reflection}

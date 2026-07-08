@@ -470,6 +470,32 @@ function appendSourcesToBubble(bubble, sources, webSources) {
   }
 }
 
+const REFLECTION_OPTIONS = [
+  { label: "Simpler explanation", followUp: "Can you explain that more simply?" },
+  { label: "Examples", followUp: "Can you give me some examples of that?" },
+  { label: "Quiz me", followUp: "Quiz me on that." },
+  { label: "Go deeper", followUp: "Can you go deeper into that?" },
+];
+
+function showReflectionChips(bubble) {
+  const row = document.createElement("div");
+  row.className = "reflection-row";
+  for (const opt of REFLECTION_OPTIONS) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "reflection-chip";
+    chip.textContent = opt.label;
+    chip.addEventListener("click", () => {
+      row.remove();
+      input.value = opt.followUp;
+      sendMessage();
+    });
+    row.appendChild(chip);
+  }
+  bubble.closest(".row").insertAdjacentElement("afterend", row);
+  messagesScrollEl.scrollTop = messagesScrollEl.scrollHeight;
+}
+
 function showHealthEmptyState() {
   if (healthMessageList) {
     healthMessageList.remove();
@@ -1347,6 +1373,7 @@ async function sendMessage() {
     let bubble = null;
     let sources = [];
     let webSources = [];
+    let showReflection = false;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -1372,6 +1399,7 @@ async function sendMessage() {
         } else if (chunk.done) {
           sources = chunk.sources || [];
           webSources = chunk.web_sources || [];
+          showReflection = !!chunk.show_reflection;
         }
       }
     }
@@ -1381,6 +1409,7 @@ async function sendMessage() {
       bubble = beginStreamingMessage();
     }
     appendSourcesToBubble(bubble, sources, webSources);
+    if (showReflection) showReflectionChips(bubble);
 
     history.push({ role: "assistant", content: fullText, sources, webSources });
     persistCurrentChat();
