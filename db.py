@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS chats (
     assistant TEXT NOT NULL DEFAULT 'nebula',
     title TEXT NOT NULL,
     messages_json TEXT NOT NULL,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    pinned INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS health_entries (
@@ -71,6 +72,8 @@ def init_db() -> None:
         chat_columns = {row["name"] for row in conn.execute("PRAGMA table_info(chats)")}
         if "assistant" not in chat_columns:
             conn.execute("ALTER TABLE chats ADD COLUMN assistant TEXT NOT NULL DEFAULT 'nebula'")
+        if "pinned" not in chat_columns:
+            conn.execute("ALTER TABLE chats ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
 
 
 # --- Users & sessions ---
@@ -126,10 +129,45 @@ def delete_session(token: str) -> None:
 def list_chats(user_id: int, assistant: str) -> list[dict]:
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT id, title, updated_at FROM chats WHERE user_id = ? AND assistant = ? ORDER BY updated_at DESC",
+            "SELECT id, title, updated_at, pinned FROM chats WHERE user_id = ? AND assistant = ? ORDER BY updated_at DESC",
             (user_id, assistant),
         ).fetchall()
-        return [{"id": r["id"], "title": r["title"], "updatedAt": r["updated_at"]} for r in rows]
+        return [{"id": r["id"], "title": r["title"], "updatedAt": r["updated_at"], "pinned": bool(r["pinned"])} for r in rows]
+
+
+def list_all_chats(user_id: int) -> list[dict]:
+    """Every chat across every assistant — used by NOVA Observatory's star map."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, assistant, title, updated_at, pinned FROM chats WHERE user_id = ? ORDER BY updated_at DESC",
+            (user_id,),
+        ).fetchall()
+        return [
+            {
+                "id": r["id"],
+                "assistant": r["assistant"],
+                "title": r["title"],
+                "updatedAt": r["updated_at"],
+                "pinned": bool(r["pinned"]),
+            }
+            for r in rows
+        ]
+
+
+def toggle_pin(user_id: int, assistant: str, chat_id: str) -> bool:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT pinned FROM chats WHERE user_id = ? AND assistant = ? AND id = ?",
+            (user_id, assistant, chat_id),
+        ).fetchone()
+        if not row:
+            return False
+        new_value = 0 if row["pinned"] else 1
+        conn.execute(
+            "UPDATE chats SET pinned = ? WHERE user_id = ? AND assistant = ? AND id = ?",
+            (new_value, user_id, assistant, chat_id),
+        )
+        return bool(new_value)
 
 
 def get_chat(user_id: int, assistant: str, chat_id: str) -> dict | None:

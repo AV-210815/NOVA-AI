@@ -146,6 +146,18 @@ def chats_list(assistant: str = "nebula", user: dict = Depends(require_user)):
     return {"chats": db.list_chats(user["id"], assistant)}
 
 
+@app.get("/api/chats/all")
+def chats_list_all(user: dict = Depends(require_user)):
+    """Every chat across every assistant — powers NOVA Observatory's star map."""
+    return {"chats": db.list_all_chats(user["id"])}
+
+
+@app.post("/api/chats/{chat_id}/pin")
+def chats_toggle_pin(chat_id: str, assistant: str = "nebula", user: dict = Depends(require_user)):
+    pinned = db.toggle_pin(user["id"], assistant, chat_id)
+    return {"pinned": pinned}
+
+
 @app.get("/api/chats/{chat_id}")
 def chats_get(chat_id: str, assistant: str = "nebula", user: dict = Depends(require_user)):
     chat_data = db.get_chat(user["id"], assistant, chat_id)

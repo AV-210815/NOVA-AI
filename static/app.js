@@ -17,6 +17,14 @@ const moonIcon = document.getElementById("moon-icon");
 const ambientCanvas = document.getElementById("ambient-canvas");
 const ambientCtx = ambientCanvas.getContext("2d");
 
+const observatoryBtn = document.getElementById("observatory-btn");
+const observatoryOverlay = document.getElementById("observatory-overlay");
+const observatoryCanvas = document.getElementById("observatory-canvas");
+const observatoryCtx = observatoryCanvas.getContext("2d");
+const observatorySearch = document.getElementById("observatory-search");
+const observatoryCloseBtn = document.getElementById("observatory-close-btn");
+const observatoryEmpty = document.getElementById("observatory-empty");
+
 const nebulaView = document.getElementById("nebula-view");
 const healthView = document.getElementById("health-view");
 const healthSidebar = document.getElementById("health-sidebar");
@@ -1937,6 +1945,288 @@ async function init() {
   renderChatList();
   startAmbientBackground(currentAssistant);
 }
+
+// NOVA Observatory: every conversation across every assistant rendered as a
+// star, clustered into one galaxy per assistant. Pan by dragging, zoom with
+// the wheel, click a star to open that conversation, double-click to pin —
+// pinned stars in the same galaxy get connected by a faint constellation line.
+const GALAXY_COLORS = {
+  nebula: "#a78bfa",
+  sol: "#facc15",
+  supernova: "#f472b6",
+  m618: "#818cf8",
+  sirius: "#93c5fd",
+};
+const GALAXY_ORDER = ["nebula", "sol", "supernova", "m618", "sirius"];
+const GALAXY_RADIUS = 900;
+const GALAXY_CLUSTER_SPREAD = 220;
+
+let observatoryChats = [];
+let observatoryStars = [];
+let observatoryGalaxyCenters = {};
+let observatoryCamera = { x: 0, y: -150, zoom: 0.32 };
+let observatoryRAF = null;
+let observatorySearchQuery = "";
+let observatoryDragging = false;
+let observatoryDragMoved = false;
+let observatoryLastMouse = { x: 0, y: 0 };
+
+function hashString(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return hash;
+}
+
+function mulberry32(seed) {
+  return function () {
+    seed |= 0;
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function computeObservatoryLayout(chats) {
+  const galaxyCenters = {};
+  GALAXY_ORDER.forEach((assistantId, i) => {
+    const angle = (i / GALAXY_ORDER.length) * Math.PI * 2 - Math.PI / 2;
+    galaxyCenters[assistantId] = {
+      x: Math.cos(angle) * GALAXY_RADIUS,
+      y: Math.sin(angle) * GALAXY_RADIUS,
+    };
+  });
+
+  const times = chats.map(c => c.updatedAt);
+  const minT = times.length ? Math.min(...times) : 0;
+  const maxT = times.length ? Math.max(...times) : 1;
+  const span = Math.max(1, maxT - minT);
+
+  const stars = chats.map(chat => {
+    const center = galaxyCenters[chat.assistant] || galaxyCenters.nebula;
+    const rand = mulberry32(hashString(chat.id));
+    const dist = rand() * GALAXY_CLUSTER_SPREAD;
+    const angle = rand() * Math.PI * 2;
+    const recency = (chat.updatedAt - minT) / span;
+    return {
+      chat,
+      x: center.x + Math.cos(angle) * dist,
+      y: center.y + Math.sin(angle) * dist,
+      r: 2 + recency * 3.5,
+      phase: rand() * Math.PI * 2,
+      twinkleSpeed: 0.5 + rand() * 1.5,
+      color: GALAXY_COLORS[chat.assistant] || GALAXY_COLORS.nebula,
+    };
+  });
+
+  return { stars, galaxyCenters };
+}
+
+function resizeObservatoryCanvas() {
+  observatoryCanvas.width = observatoryCanvas.clientWidth;
+  observatoryCanvas.height = observatoryCanvas.clientHeight;
+}
+
+function drawObservatoryFrame(t) {
+  const w = observatoryCanvas.width, h = observatoryCanvas.height;
+  observatoryCtx.clearRect(0, 0, w, h);
+  observatoryCtx.fillStyle = "#000";
+  observatoryCtx.fillRect(0, 0, w, h);
+  if (w === 0 || h === 0) return;
+
+  observatoryCtx.save();
+  observatoryCtx.translate(w / 2, h / 2);
+  observatoryCtx.scale(observatoryCamera.zoom, observatoryCamera.zoom);
+  observatoryCtx.translate(-observatoryCamera.x, -observatoryCamera.y);
+
+  for (const assistantId of GALAXY_ORDER) {
+    const center = observatoryGalaxyCenters[assistantId];
+    if (!center) continue;
+    const meta = ASSISTANT_META[assistantId];
+    observatoryCtx.font = `${16 / observatoryCamera.zoom}px 'Bodoni Moda', serif`;
+    observatoryCtx.fillStyle = "rgba(255, 255, 255, 0.22)";
+    observatoryCtx.textAlign = "center";
+    observatoryCtx.fillText(meta ? meta.label : assistantId, center.x, center.y - 300);
+  }
+
+  const pinnedByGalaxy = {};
+  for (const star of observatoryStars) {
+    if (star.chat.pinned) {
+      (pinnedByGalaxy[star.chat.assistant] ||= []).push(star);
+    }
+  }
+  observatoryCtx.lineWidth = 1 / observatoryCamera.zoom;
+  for (const key in pinnedByGalaxy) {
+    const group = pinnedByGalaxy[key];
+    const [r, g, b] = hexToRgb(GALAXY_COLORS[key] || GALAXY_COLORS.nebula);
+    observatoryCtx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.35)`;
+    for (let i = 0; i < group.length - 1; i++) {
+      observatoryCtx.beginPath();
+      observatoryCtx.moveTo(group[i].x, group[i].y);
+      observatoryCtx.lineTo(group[i + 1].x, group[i + 1].y);
+      observatoryCtx.stroke();
+    }
+  }
+
+  const query = observatorySearchQuery.trim().toLowerCase();
+  for (const star of observatoryStars) {
+    const matches = !query || star.chat.title.toLowerCase().includes(query);
+    const twinkle = 0.5 + 0.5 * Math.abs(Math.sin(t * 0.001 * star.twinkleSpeed + star.phase));
+    const alpha = matches ? twinkle : twinkle * 0.1;
+    const [r, g, b] = hexToRgb(star.color);
+    const radius = star.r * (star.chat.pinned ? 1.5 : 1);
+
+    observatoryCtx.beginPath();
+    observatoryCtx.arc(star.x, star.y, radius, 0, Math.PI * 2);
+    observatoryCtx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    observatoryCtx.shadowColor = `rgba(${r}, ${g}, ${b}, ${matches ? 0.8 : 0.1})`;
+    observatoryCtx.shadowBlur = matches ? 9 : 2;
+    observatoryCtx.fill();
+    observatoryCtx.shadowBlur = 0;
+
+    if (star.chat.pinned) {
+      observatoryCtx.beginPath();
+      observatoryCtx.arc(star.x, star.y, radius * 2.4, 0, Math.PI * 2);
+      observatoryCtx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${matches ? 0.5 : 0.08})`;
+      observatoryCtx.lineWidth = 1 / observatoryCamera.zoom;
+      observatoryCtx.stroke();
+    }
+  }
+
+  observatoryCtx.restore();
+}
+
+function observatoryLoop(t) {
+  drawObservatoryFrame(t);
+  observatoryRAF = requestAnimationFrame(observatoryLoop);
+}
+
+function observatoryScreenToWorld(clientX, clientY) {
+  const rect = observatoryCanvas.getBoundingClientRect();
+  const x = clientX - rect.left, y = clientY - rect.top;
+  const w = observatoryCanvas.width, h = observatoryCanvas.height;
+  return {
+    x: (x - w / 2) / observatoryCamera.zoom + observatoryCamera.x,
+    y: (y - h / 2) / observatoryCamera.zoom + observatoryCamera.y,
+  };
+}
+
+function findObservatoryStarAt(worldX, worldY) {
+  let closest = null, closestDist = 16;
+  for (const star of observatoryStars) {
+    const dist = Math.hypot(star.x - worldX, star.y - worldY);
+    if (dist < closestDist) {
+      closest = star;
+      closestDist = dist;
+    }
+  }
+  return closest;
+}
+
+async function openChatFromObservatory(star) {
+  closeObservatory();
+  await switchView("chat", star.chat.assistant);
+  await switchToChat(star.chat.id);
+}
+
+async function toggleObservatoryPin(star) {
+  const res = await fetch(`/api/chats/${star.chat.id}/pin?assistant=${star.chat.assistant}`, { method: "POST" });
+  const data = await res.json();
+  star.chat.pinned = data.pinned;
+}
+
+async function openObservatory() {
+  observatoryOverlay.hidden = false;
+  resizeObservatoryCanvas();
+  const res = await fetch("/api/chats/all");
+  const data = await res.json();
+  observatoryChats = data.chats;
+  observatoryEmpty.hidden = observatoryChats.length > 0;
+  const layout = computeObservatoryLayout(observatoryChats);
+  observatoryStars = layout.stars;
+  observatoryGalaxyCenters = layout.galaxyCenters;
+  observatoryCamera = { x: 0, y: -150, zoom: 0.32 };
+  if (!observatoryRAF) observatoryRAF = requestAnimationFrame(observatoryLoop);
+}
+
+function closeObservatory() {
+  observatoryOverlay.hidden = true;
+  if (observatoryRAF) {
+    cancelAnimationFrame(observatoryRAF);
+    observatoryRAF = null;
+  }
+  observatorySearch.value = "";
+  observatorySearchQuery = "";
+}
+
+observatoryBtn.addEventListener("click", openObservatory);
+observatoryCloseBtn.addEventListener("click", closeObservatory);
+
+observatorySearch.addEventListener("input", () => {
+  observatorySearchQuery = observatorySearch.value;
+});
+
+observatoryCanvas.addEventListener("mousedown", (e) => {
+  observatoryDragging = true;
+  observatoryDragMoved = false;
+  observatoryLastMouse = { x: e.clientX, y: e.clientY };
+  observatoryOverlay.classList.add("dragging");
+});
+
+window.addEventListener("mousemove", (e) => {
+  if (!observatoryDragging) return;
+  const dx = e.clientX - observatoryLastMouse.x;
+  const dy = e.clientY - observatoryLastMouse.y;
+  if (Math.abs(dx) > 2 || Math.abs(dy) > 2) observatoryDragMoved = true;
+  observatoryCamera.x -= dx / observatoryCamera.zoom;
+  observatoryCamera.y -= dy / observatoryCamera.zoom;
+  observatoryLastMouse = { x: e.clientX, y: e.clientY };
+});
+
+window.addEventListener("mouseup", () => {
+  observatoryDragging = false;
+  observatoryOverlay.classList.remove("dragging");
+});
+
+let observatoryClickTimer = null;
+
+observatoryCanvas.addEventListener("click", (e) => {
+  if (observatoryDragMoved) return;
+  const world = observatoryScreenToWorld(e.clientX, e.clientY);
+  const star = findObservatoryStarAt(world.x, world.y);
+  if (!star) return;
+  // A double-click also fires two separate "click" events before "dblclick" —
+  // delay acting on a single click just long enough to find out whether a
+  // second one follows (which cancels this and lets dblclick handle it).
+  if (observatoryClickTimer) return;
+  observatoryClickTimer = setTimeout(() => {
+    observatoryClickTimer = null;
+    openChatFromObservatory(star);
+  }, 250);
+});
+
+observatoryCanvas.addEventListener("dblclick", (e) => {
+  if (observatoryClickTimer) {
+    clearTimeout(observatoryClickTimer);
+    observatoryClickTimer = null;
+  }
+  const world = observatoryScreenToWorld(e.clientX, e.clientY);
+  const star = findObservatoryStarAt(world.x, world.y);
+  if (star) toggleObservatoryPin(star);
+});
+
+observatoryCanvas.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const zoomFactor = Math.exp(-e.deltaY * 0.001);
+  observatoryCamera.zoom = Math.min(3, Math.max(0.15, observatoryCamera.zoom * zoomFactor));
+}, { passive: false });
+
+window.addEventListener("resize", () => {
+  if (!observatoryOverlay.hidden) resizeObservatoryCanvas();
+});
 
 const THEME_KEY = "nova.theme";
 const BG_COLOR_KEY = "nova.bgColor";
