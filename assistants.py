@@ -8,6 +8,7 @@ generation over the user's notes — the others are plain conversational chat.
 """
 import json
 import re
+import traceback
 from datetime import datetime
 from zoneinfo import ZoneInfo, available_timezones
 
@@ -405,7 +406,19 @@ def chat_stream(assistant_id: str, user_message: str, history: list[dict]):
             yield {"token": _format_rate_limit_message(assistant["name"], e)}
             yield {"done": True, "sources": [], "web_sources": []}
             return
-        raise
+        traceback.print_exc()
+        yield {"token": f"{assistant['name']} ran into a provider error and couldn't reply — please try again."}
+        yield {"done": True, "sources": [], "web_sources": []}
+        return
+    except Exception:
+        # Any other provider failure (auth, connection, etc.) — a stream that
+        # dies mid-response without yielding "done" leaves the frontend
+        # waiting on a connection that will never resolve, looking exactly
+        # like it's stuck "thinking" forever. Always finish the response.
+        traceback.print_exc()
+        yield {"token": f"{assistant['name']} ran into a provider error and couldn't reply — please try again."}
+        yield {"done": True, "sources": [], "web_sources": []}
+        return
 
     if not full_reply:
         yield {"token": "I wasn't able to come up with an answer for that."}
