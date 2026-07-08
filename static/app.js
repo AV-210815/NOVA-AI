@@ -1883,7 +1883,16 @@ async function init() {
 
   loginOverlay.hidden = true;
   appEl.hidden = false;
-  accountAvatar.src = meData.user.picture || "";
+  // An empty img[src] makes some browsers re-request the current page as an
+  // "image", rendering as a broken-image icon — fall back to a plain SVG
+  // person silhouette instead whenever there's no real picture (e.g. Guest).
+  const fallbackAvatar = "data:image/svg+xml;utf8," + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#55566a">' +
+    '<circle cx="12" cy="12" r="12" fill="#2a2a33"/>' +
+    '<circle cx="12" cy="9.5" r="4" /><path d="M4 20.5c0-4 4-6.5 8-6.5s8 2.5 8 6.5"/>' +
+    '</svg>'
+  );
+  accountAvatar.src = meData.user.picture || fallbackAvatar;
   accountName.textContent = meData.user.name || meData.user.email;
   accountEmail.textContent = meData.user.email;
 
