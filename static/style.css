@@ -1005,6 +1005,10 @@ main {
   color: var(--text-primary);
 }
 
+#account-signout-btn[hidden] {
+  display: none;
+}
+
 /* Settings */
 
 #settings-overlay {

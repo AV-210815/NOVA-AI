@@ -1,5 +1,6 @@
 import json
 import os
+import uuid
 from datetime import datetime, timezone
 
 from fastapi import Cookie, Depends, FastAPI, File, Form, HTTPException, Response, UploadFile
@@ -20,9 +21,36 @@ db.init_db()
 app = FastAPI(title="NOVA semantic search")
 
 
-def require_user(nova_session: str | None = Cookie(default=None)) -> dict:
+def _set_session_cookie(response: Response, session_token: str) -> None:
+    response.set_cookie(
+        key=auth.SESSION_COOKIE,
+        value=session_token,
+        httponly=True,
+        samesite="lax",
+        secure=bool(os.environ.get("RENDER")),
+        max_age=db.SESSION_LIFETIME_SECONDS,
+    )
+
+
+def _get_or_create_guest(response: Response, nova_session: str | None) -> dict:
+    """Auth is skipped on Render (config.AUTH_REQUIRED is False there) — but
+    each visitor still gets their own distinct account (a random per-browser
+    identity via the session cookie), not one shared account for everyone.
+    """
+    if nova_session:
+        user = auth.get_current_user(nova_session)
+        if user:
+            return user
+    guest_sub = f"guest-{uuid.uuid4().hex}"
+    user = db.upsert_user(google_sub=guest_sub, email="", name="Your Account", picture="")
+    session_token = db.create_session(user["id"])
+    _set_session_cookie(response, session_token)
+    return dict(user)
+
+
+def require_user(response: Response, nova_session: str | None = Cookie(default=None)) -> dict:
     if not config.AUTH_REQUIRED:
-        return dict(db.get_or_create_guest_user())
+        return _get_or_create_guest(response, nova_session)
     user = auth.get_current_user(nova_session)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -70,14 +98,7 @@ def auth_google(req: GoogleLoginRequest, response: Response):
         session_token, user = auth.login_with_google_token(req.credential)
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e))
-    response.set_cookie(
-        key=auth.SESSION_COOKIE,
-        value=session_token,
-        httponly=True,
-        samesite="lax",
-        secure=bool(os.environ.get("RENDER")),
-        max_age=db.SESSION_LIFETIME_SECONDS,
-    )
+    _set_session_cookie(response, session_token)
     return _public_user(user)
 
 
@@ -90,11 +111,12 @@ def auth_logout(response: Response, nova_session: str | None = Cookie(default=No
 
 
 @app.get("/api/auth/me")
-def auth_me(nova_session: str | None = Cookie(default=None)):
+def auth_me(response: Response, nova_session: str | None = Cookie(default=None)):
     if not config.AUTH_REQUIRED:
-        return {"user": _public_user(dict(db.get_or_create_guest_user()))}
+        user = _get_or_create_guest(response, nova_session)
+        return {"user": _public_user(user), "auth_required": False}
     user = auth.get_current_user(nova_session)
-    return {"user": _public_user(user) if user else None}
+    return {"user": _public_user(user) if user else None, "auth_required": True}
 
 
 @app.get("/api/assistants")

@@ -1895,6 +1895,11 @@ async function init() {
   accountAvatar.src = meData.user.picture || fallbackAvatar;
   accountName.textContent = meData.user.name || meData.user.email;
   accountEmail.textContent = meData.user.email;
+  accountEmail.hidden = !meData.user.email;
+  // Sign-out is meaningless when auth is skipped (deployed Render instance,
+  // where every visitor gets their own guest account with nothing to log
+  // out of) — only show it when there's a real Google session behind it.
+  accountSignoutBtn.hidden = meData.auth_required === false;
 
   setGreeting();
   renderSuggestions();
