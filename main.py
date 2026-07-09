@@ -16,6 +16,7 @@ import health
 import ingest
 import voice
 
+db.backup_db()
 db.init_db()
 
 app = FastAPI(title="NOVA semantic search")
@@ -81,6 +82,15 @@ class SaveChatRequest(BaseModel):
     title: str
     messages: list[dict]
     assistant: str = "nebula"
+
+
+class RenameChatRequest(BaseModel):
+    title: str
+
+
+class GenerateTitleRequest(BaseModel):
+    message: str
+    reply: str
 
 
 def _public_user(user: dict) -> dict:
@@ -156,6 +166,20 @@ def chats_list_all(user: dict = Depends(require_user)):
 def chats_toggle_pin(chat_id: str, assistant: str = "nebula", user: dict = Depends(require_user)):
     pinned = db.toggle_pin(user["id"], assistant, chat_id)
     return {"pinned": pinned}
+
+
+@app.post("/api/chats/{chat_id}/rename")
+def chats_rename(chat_id: str, req: RenameChatRequest, assistant: str = "nebula", user: dict = Depends(require_user)):
+    renamed = db.rename_chat(user["id"], assistant, chat_id, req.title)
+    if not renamed:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    return {"ok": True}
+
+
+@app.post("/api/chats/generate-title")
+def chats_generate_title(req: GenerateTitleRequest, user: dict = Depends(require_user)):
+    title = assistants.generate_chat_title(req.message, req.reply)
+    return {"title": title}
 
 
 @app.get("/api/chats/{chat_id}")

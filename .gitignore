@@ -7,3 +7,4 @@ venv/
 notes/
 health_log.json
 nova.db
+backups/

@@ -5,10 +5,12 @@ both are now scoped per signed-in user. Uses the standard library's sqlite3,
 no new dependency.
 """
 import json
+import shutil
 import sqlite3
 import time
 import uuid
 from contextlib import contextmanager
+from datetime import datetime
 
 import config
 
@@ -61,6 +63,25 @@ def get_db():
         conn.commit()
     finally:
         conn.close()
+
+
+def backup_db() -> None:
+    """Copies nova.db to a timestamped backup every time the server starts, so
+    an accidental data loss (during testing, a bad migration, anything) has
+    something to recover from — this exists because a chats-table wipe
+    happened during development with no backup available to undo it. Keeps
+    the most recent 10 backups; older ones are pruned automatically.
+    """
+    if not config.DB_PATH.exists():
+        return
+    backup_dir = config.DATA_DIR / "backups"
+    backup_dir.mkdir(exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    shutil.copy2(config.DB_PATH, backup_dir / f"nova-{timestamp}.db")
+
+    backups = sorted(backup_dir.glob("nova-*.db"))
+    for old in backups[:-10]:
+        old.unlink()
 
 
 def init_db() -> None:
@@ -201,6 +222,19 @@ def save_chat(user_id: int, assistant: str, chat_id: str, title: str, messages: 
 def delete_chat(user_id: int, assistant: str, chat_id: str) -> None:
     with get_db() as conn:
         conn.execute("DELETE FROM chats WHERE user_id = ? AND assistant = ? AND id = ?", (user_id, assistant, chat_id))
+
+
+def rename_chat(user_id: int, assistant: str, chat_id: str, title: str) -> bool:
+    """Only touches the title — not messages_json/updated_at — so an
+    auto-generated title (or a manual rename) doesn't bump the chat to the
+    top of "Recent" the way actually chatting does.
+    """
+    with get_db() as conn:
+        cur = conn.execute(
+            "UPDATE chats SET title = ? WHERE user_id = ? AND assistant = ? AND id = ?",
+            (title, user_id, assistant, chat_id),
+        )
+        return cur.rowcount > 0
 
 
 # --- NOVA Nutrition entries ---
