@@ -255,6 +255,19 @@ textarea::placeholder { color: var(--text-muted); }
   padding-right: 30px;
 }
 
+.chat-item-rename-input {
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 9px;
+  border: 1px solid rgba(167, 139, 250, 0.4);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  background: rgba(167, 139, 250, 0.08);
+  color: var(--text-primary);
+  outline: none;
+}
+
 .chat-item.active {
   background: rgba(167, 139, 250, 0.10);
   border-left: 2px solid #a78bfa;

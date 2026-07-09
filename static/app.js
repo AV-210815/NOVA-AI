@@ -286,6 +286,30 @@ async function persistCurrentChat() {
   renderChatList();
 }
 
+async function generateAndApplyChatTitle(userMessage, assistantReply) {
+  const chatId = activeChatId;
+  const assistantId = currentAssistant;
+  try {
+    const res = await fetch("/api/chats/generate-title", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: userMessage, reply: assistantReply }),
+    });
+    const data = await res.json();
+    if (!data.title) return;
+    await fetch(`/api/chats/${chatId}/rename?assistant=${assistantId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: data.title }),
+    });
+    const chatMeta = chats.find(c => c.id === chatId);
+    if (chatMeta) chatMeta.title = data.title;
+    renderChatList();
+  } catch (err) {
+    // Non-critical — the temporary (first-message) title just stays as-is.
+  }
+}
+
 let confirmingDeleteId = null;
 let confirmingDeleteTimeout = null;
 
@@ -301,6 +325,38 @@ async function deleteChat(id) {
   }
 }
 
+function startRenamingChat(chat, btn) {
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "chat-item-rename-input";
+  input.value = chat.title;
+  btn.replaceWith(input);
+  input.focus();
+  input.select();
+
+  const commit = async () => {
+    const newTitle = input.value.trim();
+    if (newTitle && newTitle !== chat.title) {
+      chat.title = newTitle;
+      await fetch(`/api/chats/${chat.id}/rename?assistant=${currentAssistant}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: newTitle }),
+      });
+    }
+    renderChatList();
+  };
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") input.blur();
+    if (e.key === "Escape") {
+      input.value = chat.title;
+      input.blur();
+    }
+  });
+  input.addEventListener("blur", commit, { once: true });
+}
+
 function renderChatList() {
   chatListEl.innerHTML = "";
   const sorted = [...chats].sort((a, b) => b.updatedAt - a.updatedAt);
@@ -311,7 +367,12 @@ function renderChatList() {
     const btn = document.createElement("button");
     btn.className = "chat-item" + (chat.id === activeChatId ? " active" : "");
     btn.textContent = chat.title;
+    btn.title = "Double-click to rename";
     btn.addEventListener("click", () => switchToChat(chat.id));
+    btn.addEventListener("dblclick", (e) => {
+      e.stopPropagation();
+      startRenamingChat(chat, btn);
+    });
 
     const isConfirming = chat.id === confirmingDeleteId;
     const del = document.createElement("button");
@@ -1421,6 +1482,9 @@ async function sendMessage() {
 
     history.push({ role: "assistant", content: fullText, sources, webSources });
     persistCurrentChat();
+    // Auto-title only the very first exchange of a chat — never regenerated
+    // after that, and never awaited here so it can't delay anything.
+    if (history.length === 2) generateAndApplyChatTitle(message, fullText);
   } catch (err) {
     pending.remove();
     addMessage("assistant", "Something went wrong reaching the server.");

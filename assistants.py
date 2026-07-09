@@ -347,6 +347,61 @@ def _stream_openai_compatible(client: OpenAI, model: str, system_prompt: str, us
             yield delta
 
 
+TITLE_SYSTEM_PROMPT = (
+    "You write short conversation titles, exactly like ChatGPT's automatic chat "
+    "naming. Given the user's first message (and the assistant's first reply for "
+    "context), output ONLY the title text — nothing else: no quotation marks, no "
+    "trailing period, no explanation of your choice.\n\n"
+    "Rules:\n"
+    "- Usually 3-6 words.\n"
+    "- Title Case.\n"
+    "- Be specific, not generic — identify the actual topic or task.\n"
+    "- Never simply shorten, paraphrase, or truncate the user's message — figure "
+    "out what the conversation is really about and name that.\n"
+    "- Never start with filler like \"Help With\", \"Question About\", \"Can You\", "
+    "\"Please\", or \"Explain\".\n"
+    "- Never use quotation marks anywhere in the title.\n\n"
+    "Examples:\n"
+    "User: Explain how photosynthesis works to a 7-year-old. -> Explaining Photosynthesis to a Child\n"
+    "User: Build a Discord moderation bot using Python. -> Building a Python Discord Bot\n"
+    "User: Help me study for my calculus exam. -> Calculus Exam Preparation\n"
+    "User: Compare Messi and Ronaldo across their entire careers. -> Messi vs Ronaldo Career Comparison\n"
+    "User: Design a luxury AI chatbot interface. -> Luxury AI Interface Design\n"
+    "User: Write a professional email asking for an internship. -> Internship Request Email\n"
+    "User: Help debug my React authentication system. -> Debugging React Authentication\n"
+    "User: Explain black holes using simple language. -> Understanding Black Holes\n"
+    "User: Create a fitness plan for muscle gain. -> Muscle Gain Workout Plan\n"
+    "User: Give me ideas for my AI startup. -> AI Startup Brainstorming\n"
+    "User: How do I deploy my Next.js app to Render? -> Deploying Next.js to Render"
+)
+
+
+def generate_chat_title(message: str, reply: str) -> str | None:
+    """Runs on Groq regardless of which assistant is actually chatting — titles
+    are frequent (once per new chat) and tiny, so this deliberately avoids
+    competing with Gemini's much scarcer free-tier daily request quota.
+    Tries twice; returns None (caller keeps the temporary title) if both fail.
+    """
+    messages = [
+        {"role": "system", "content": TITLE_SYSTEM_PROMPT},
+        {"role": "user", "content": f"User's message: {message}\n\nAssistant's reply (for context, may be truncated): {reply[:400]}"},
+    ]
+    for _ in range(2):
+        try:
+            response = _groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=messages,
+                max_tokens=20,
+                temperature=0.4,
+            )
+            title = (response.choices[0].message.content or "").strip().strip('"').strip("'").rstrip(".")
+            if title:
+                return title
+        except Exception:
+            traceback.print_exc()
+    return None
+
+
 def _format_rate_limit_message(assistant_name: str, error: Exception) -> str:
     """Pulls the usage/limit and retry-after figures out of the provider's own
     error text (Groq/OpenRouter: "Limit 100000, Used 98689 ... try again in
